@@ -2,12 +2,12 @@
 #include "lunix.h"
 
 static long lunix_sys_write(int fd, const void *buf, unsigned long count) {
-    return write(fd, buf, count);
+  return write(fd, buf, count);
 }
 
 static long lunix_sys_exit(int status) {
-    _exit(status);
-    return 0;
+  _exit(status);
+  return 0;
 }
 
 long lunix_syscall(long number, long a0, long a1, long a2) {

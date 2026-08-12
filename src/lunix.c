@@ -6,7 +6,6 @@
 
 static long lunix_sys_write(uc_engine *uc, int fd, uint64_t buf, unsigned long count) {
   char *data = malloc(count + 1);
-
   if (!data) {
     return -12;
   }
@@ -16,17 +15,16 @@ static long lunix_sys_write(uc_engine *uc, int fd, uint64_t buf, unsigned long c
     free(data);
     return -14;
   }
-
   data[count] = '\0';
-
+  
   long result = write(fd, data, count);
-
   free(data);
   return result;
 }
 
 static long lunix_sys_exit(uc_engine *uc, int status) {
-  uc=uc; lunix_log("[lunix] exit: %d", status);
+  uc=uc; status=status; lunix_log("[lunix] exit: %d\n", status);
+  uc_emu_stop(uc);
   return 0;
 }
 

@@ -1,7 +1,7 @@
 #pragma once
 #include <unicorn/unicorn.h>
 
-#define LUNIX_ENABLE_LOG
+// #define LUNIX_ENABLE_LOG
 // #define LUNIX_ENABLE_DEBUG
 
 #ifdef LUNIX_ENABLE_LOG

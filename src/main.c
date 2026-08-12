@@ -103,8 +103,12 @@ static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user
   // lunix_debug("insn: %x xor: %x\n", insn, insn & 0xffe0001f);
   if ((insn & 0xffe0001f) == 0xd4000001) {
     lunix_debug("[lunix] syscall\n");
-    lunix_syscall(uc);
-    uc_emu_stop(uc);
+    
+    uint64_t result = lunix_syscall(uc);
+    uc_reg_write(uc, UC_ARM64_REG_X0, &result);
+
+    uint64_t pc = address + 4;
+    uc_reg_write(uc, UC_ARM64_REG_PC, &pc);
   }
 }
 
@@ -112,7 +116,7 @@ int main(int argc, const char **argv) {
   if (argc < 2) {
     printf("USAGE: lunix [PATH]");
   }
-  lunix_debug("lunix v0.1.0\n");
+  lunix_log("lunix v0.1.0\n");
 
   const char *path = argv[1];
 

@@ -1,31 +1,34 @@
 CC = cc
-CFLAGS = -O2 -Wall -Wextra -static
-LIBS = -lm
+CFLAGS = -O2 -Wall -Wextra
+LIBS = -lm -lunicorn
 
-ASSET = asset
-SRC = lunix
+SRC = src
 BUILD = build
-OUT = $(BUILD)/lunix.bin
+OUT = $(BUILD)/lunix
 
 CSRC = $(shell find $(SRC) -type f -name '*.c')
 COBJ = $(patsubst %.c,$(BUILD)/%.o,$(CSRC))
 
-PROGRAMS := $(shell find programs -mindepth 2 -maxdepth 2 -name Makefile -printf '%h\n')
+PROGRAMS := $(patsubst examples/%.c,examples/%,$(wildcard examples/*.c))
 
 all: clean compile programs
 
 clean:
 	mkdir -p $(BUILD)
 	rm -rf $(BUILD)/*
+	mkdir -p $(BUILD)/out
 	@for dir in $(PROGRAMS); do \
 		rm -rf $$dir/build; \
 	done
+	@find examples -type f -exec sh -c 'file "$$1" | grep -q "ELF" && rm -f "$$1"' _ {} \;
 
 compile: $(OUT)
-	cp -R $(ASSET) $(BUILD)/.
 
-run:
-	./$(OUT)
+run: compile
+	./$(OUT) $(filter-out run,$(MAKECMDGOALS))
+
+%:
+	@:
 
 $(OUT): $(COBJ)
 	$(CC) $(CFLAGS) -o $@ $(COBJ) $(LIBS)
@@ -35,8 +38,8 @@ $(BUILD)/%.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 programs:
-	@for dir in $(PROGRAMS); do \
-		$(MAKE) -C $$dir; \
+	@for program in $(PROGRAMS); do \
+		aarch64-linux-gnu-gcc -O0 -nostdlib -static -no-pie $$program.c -o $$program; \
 	done
 
 .PHONY: all clean compile run programs

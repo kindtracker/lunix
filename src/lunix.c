@@ -1,4 +1,5 @@
 #include <sys/random.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 #include <unicorn/unicorn.h>
@@ -22,6 +23,34 @@ static long lunix_sys_write(uc_engine *uc, int fd, uint64_t buf, unsigned long c
   data[count] = '\0';
   
   long result = write(fd, data, count);
+  free(data);
+  return result;
+}
+
+// 78
+static long lunix_sys_readlinkat(uc_engine *uc, int dirfd, uint64_t pathname, uint64_t buf, uint64_t len) {
+  if (len == 0) {
+    return 0;
+  }
+
+  char path[4096];
+  uc_err err = uc_mem_read(uc, pathname, path, sizeof(path) - 1);
+  if (err != UC_ERR_OK) {
+    return -14;
+  }
+  path[sizeof(path) - 1] = '\0';
+  char *data = malloc(len);
+  if (!data) {
+    return -12;
+  }
+
+  ssize_t result = readlinkat(dirfd, path, data, len);
+  if (result >= 0) {
+    err = uc_mem_write(uc, buf, data, result);
+    if (err != UC_ERR_OK) {
+      result = -14;
+    }
+  }
   free(data);
   return result;
 }
@@ -58,6 +87,28 @@ static long lunix_sys_brk(uc_engine *uc, uint64_t address) {
   return heap_end;
 }
 
+// 226
+static long lunix_sys_mprotect(uc_engine *uc, uint64_t addr, uint64_t len, int prot) {
+  uint64_t start = addr & ~0xfffULL;
+  uint64_t end = (addr + len + 0xfff) & ~0xfffULL;
+  if (end <= start) {
+    return -22;
+  }
+
+  int perms = 0;
+  if (prot & PROT_READ) perms |= UC_PROT_READ;
+  if (prot & PROT_WRITE) perms |= UC_PROT_WRITE;
+  if (prot & PROT_EXEC) perms |= UC_PROT_EXEC;
+
+  uc_err err = uc_mem_protect(uc, start, end - start, perms);
+  if (err != UC_ERR_OK) {
+    lunix_log("[lunix] mprotect: %s\n", uc_strerror(err));
+    return -22;
+  }
+
+  return 0;
+}
+
 // 261
 static long lunix_sys_prlimit64(uc_engine *uc, uint64_t pid, uint64_t resource, uint64_t new_limit, uint64_t old_limit) {
   uc=uc;pid=pid;resource=resource;new_limit=new_limit;old_limit=old_limit;
@@ -65,13 +116,13 @@ static long lunix_sys_prlimit64(uc_engine *uc, uint64_t pid, uint64_t resource, 
 }
 
 // 278
-static long lunix_sys_getrandom(uc_engine *uc, uint64_t buf, uint64_t len, uint64_t flags) {
+static long lunix_sys_getrandom(uc_engine *uc, uint64_t buf, uint64_t len, unsigned int flags) {
   uint8_t *data = malloc(len);
   if (!data) {
     return -12;
   }
   
-  ssize_t result = getrandom(data, len, (unsigned int)flags);
+  ssize_t result = getrandom(data, len, flags);
   if (result < 0) {
     free(data);
     return -1;
@@ -115,6 +166,9 @@ long lunix_syscall(uc_engine *uc) {
     case 64:
       return lunix_sys_write(uc, (int)r0, r1, r2);
 
+    case 78:
+      return lunix_sys_readlinkat(uc, (int)r0, r1, r2, r3);
+
     case 93:
       return lunix_sys_exit(uc, (int)r0);
 
@@ -130,8 +184,11 @@ long lunix_syscall(uc_engine *uc) {
     case 261:
       return lunix_sys_prlimit64(uc, r0, r1, r2, r3);
     
+    case 226:
+      return lunix_sys_mprotect(uc, r0, r1, r2);
+    
     case 278:
-      return lunix_sys_getrandom(uc, r0, r1, r2);
+      return lunix_sys_getrandom(uc, r0, r1, (unsigned int)r2);
 
     case 293:
       return lunix_sys_rseq(uc, r0, r1, r2, r3);

@@ -9,15 +9,15 @@ OUT = $(BUILD)/lunix
 CSRC = $(shell find $(SRC) -type f -name '*.c')
 COBJ = $(patsubst %.c,$(BUILD)/%.o,$(CSRC))
 
-PROGRAMS := $(patsubst examples/%.c,examples/%,$(wildcard examples/*.c))
+examples := $(patsubst examples/%.c,examples/%,$(wildcard examples/*.c))
 
-all: clean compile programs
+all: clean compile examples
 
 clean:
 	mkdir -p $(BUILD)
 	rm -rf $(BUILD)/*
 	mkdir -p $(BUILD)/out
-	@for dir in $(PROGRAMS); do \
+	@for dir in $(examples); do \
 		rm -rf $$dir/build; \
 	done
 	@find examples -type f -exec sh -c 'file "$$1" | grep -q "ELF" && rm -f "$$1"' _ {} \;
@@ -37,9 +37,13 @@ $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-programs:
-	@for program in $(PROGRAMS); do \
-		aarch64-linux-gnu-gcc -O0 -nostdlib -static -no-pie $$program.c -o $$program; \
+examples:
+	@for program in $(examples); do \
+		if grep -q "void _start" $$program.c; then \
+			aarch64-linux-gnu-gcc -O0 -nostdlib -static -no-pie $$program.c -o $$program; \
+		else \
+			aarch64-linux-gnu-gcc -O0 -static -no-pie $$program.c -o $$program; \
+		fi; \
 	done
 
-.PHONY: all clean compile run programs
+.PHONY: all clean compile run examples

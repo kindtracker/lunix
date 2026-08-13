@@ -94,6 +94,63 @@ int load_elf(const char *path, uc_engine *uc, uint64_t *entry) {
   return 0;
 }
 
+static int setup_stack(uc_engine *uc, const char *path, int stack_top, int stack_size) {
+  uc_err err = uc_mem_map(uc, stack_top - stack_size, stack_size, UC_PROT_READ | UC_PROT_WRITE);
+  if (err != UC_ERR_OK) {
+    fprintf(stderr, "[lunix] failed to map stack: %s\n", uc_strerror(err));
+    return -1;
+  }
+
+  uint64_t sp = stack_top;
+  sp &= ~0xFULL;
+
+  sp -= sizeof(path);
+
+  uint64_t name_addr = sp;
+  err = uc_mem_write(uc, name_addr, path, sizeof(path));
+  if (err != UC_ERR_OK) {
+    return -1;
+  }
+
+  sp &= ~0xFULL;
+
+  // envp[0]
+  sp -= 8;
+  uint64_t zero = 0;
+  err = uc_mem_write(uc, sp, &zero, 8);
+  if (err != UC_ERR_OK) {
+    return -1;
+  }
+
+  // argv[1]
+  sp -= 8;
+  err = uc_mem_write(uc, sp, &zero, 8);
+  if (err != UC_ERR_OK) {
+    return -1;
+  }
+
+  // argv[0]
+  sp -= 8;
+  err = uc_mem_write(uc, sp, &name_addr, 8);
+  if (err != UC_ERR_OK) {
+    return -1;
+  }
+
+  // argc
+  uint64_t argc = 1;
+  sp -= 8;
+  err = uc_mem_write(uc, sp, &argc, 8);
+  if (err != UC_ERR_OK) {
+    return -1;
+  }
+
+  err = uc_reg_write(uc, UC_ARM64_REG_SP, &sp);
+  if (err != UC_ERR_OK) {
+    return -1;
+  }
+  return 0;
+}
+
 static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user_data) {
   size=size; user_data=user_data;
   uint32_t insn;
@@ -135,12 +192,13 @@ int main(int argc, const char **argv) {
     return 1;
   }
 
-  uint64_t stack = 0x7ffff000;
-  uint64_t stack_size = 0x10000;
-  uc_mem_map(uc, stack - stack_size, stack_size, UC_PROT_ALL);
-  
-  uint64_t sp = stack;
-  uc_reg_write(uc, UC_ARM64_REG_SP, &sp);
+  err = uc_mem_map(uc, LUNIX_HEAP_BASE, LUNIX_HEAP_SIZE, UC_PROT_READ | UC_PROT_WRITE);
+  if (err != UC_ERR_OK) {
+    fprintf(stderr, "[lunix] failed to map heap: %s\n", uc_strerror(err));
+    return 1;
+  }
+
+  setup_stack(uc, path, 0x7ffff000, 0x10000);
   uc_reg_write(uc, UC_ARM64_REG_PC, &entry);
 
   uc_hook hook;

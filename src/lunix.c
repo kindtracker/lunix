@@ -1,12 +1,39 @@
 #include <sys/random.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+
+#include <stdio.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include <unicorn/unicorn.h>
 
 #include "lunix.h"
 
 static uint64_t heap_end = LUNIX_HEAP_BASE;
+
+struct linux_arm64_stat {
+  uint64_t st_dev;
+  uint64_t st_ino;
+  uint32_t st_mode;
+  uint32_t st_nlink;
+  uint32_t st_uid;
+  uint32_t st_gid;
+  uint64_t st_rdev;
+  uint64_t __pad1;
+  int64_t st_size;
+  int32_t st_blksize;
+  int32_t __pad2;
+  int64_t st_blocks;
+  int64_t st_atime_sec;
+  int64_t st_atime_nsec;
+  int64_t st_mtime_sec;
+  int64_t st_mtime_nsec;
+  int64_t st_ctime_sec;
+  int64_t st_ctime_nsec;
+  uint32_t __unused4;
+  uint32_t __unused5;
+};
 
 // 64
 static long lunix_sys_write(uc_engine *uc, int fd, uint64_t buf, unsigned long count) {
@@ -55,9 +82,49 @@ static long lunix_sys_readlinkat(uc_engine *uc, int dirfd, uint64_t pathname, ui
   return result;
 }
 
+// 80
+static long lunix_sys_fstat(uc_engine *uc, int fd, uint64_t stat_addr) {
+  struct stat host;
+  if (fstat(fd, &host) < 0) {
+    return -errno;
+  }
+
+  struct linux_arm64_stat guest = {
+    .st_dev = host.st_dev,
+    .st_ino = host.st_ino,
+    .st_mode = host.st_mode,
+    .st_nlink = host.st_nlink,
+    .st_uid = host.st_uid,
+    .st_gid = host.st_gid,
+    .st_rdev = host.st_rdev,
+    .st_size = host.st_size,
+    .st_blksize = host.st_blksize,
+    .st_blocks = host.st_blocks,
+    .st_atime_sec = host.st_atim.tv_sec,
+    .st_atime_nsec = host.st_atim.tv_nsec,
+    .st_mtime_sec = host.st_mtim.tv_sec,
+    .st_mtime_nsec = host.st_mtim.tv_nsec,
+    .st_ctime_sec = host.st_ctim.tv_sec,
+    .st_ctime_nsec = host.st_ctim.tv_nsec,
+  };
+
+  uc_err err = uc_mem_write(uc, stat_addr, &guest, sizeof(guest));
+  if (err != UC_ERR_OK) {
+    return -14;
+  }
+  return 0;
+}
+
 // 93
 static long lunix_sys_exit(uc_engine *uc, int status) {
   uc=uc; status=status; lunix_log("[lunix] exit: %d\n", status);
+  uc_emu_stop(uc);
+  return 0;
+}
+
+// 93
+static long lunix_sys_exit_group(uc_engine *uc, int status) {
+  uc=uc; status=status; lunix_log("[lunix] exit_group: %d\n", status);
   uc_emu_stop(uc);
   return 0;
 }
@@ -168,9 +235,15 @@ long lunix_syscall(uc_engine *uc) {
 
     case 78:
       return lunix_sys_readlinkat(uc, (int)r0, r1, r2, r3);
+   
+    case 80:
+      return lunix_sys_fstat(uc, (int)r0, r1);
 
     case 93:
       return lunix_sys_exit(uc, (int)r0);
+
+    case 94:
+      return lunix_sys_exit_group(uc, (int)r0);
 
     case 96:
       return lunix_sys_set_tid_address(uc, r0);

@@ -1,4 +1,5 @@
 #include <sys/random.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 
@@ -34,6 +35,13 @@ struct linux_arm64_stat {
   uint32_t __unused4;
   uint32_t __unused5;
 };
+
+// 29
+static long lunix_sys_ioctl(uc_engine *uc, uint64_t fd, uint64_t cmd, uint64_t arg) {
+  uc=uc;
+  int result = ioctl(fd, cmd, arg);
+  return result;
+}
 
 // 64
 static long lunix_sys_write(uc_engine *uc, int fd, uint64_t buf, unsigned long count) {
@@ -82,6 +90,46 @@ static long lunix_sys_readlinkat(uc_engine *uc, int dirfd, uint64_t pathname, ui
   return result;
 }
 
+// 79
+static long lunix_sys_newfstat(uc_engine *uc, int dirfd, uint64_t pathname_addr, uint64_t stat_addr, int flags) {
+  char path[4096];
+  uc_err err = uc_mem_read(uc, pathname_addr, path, sizeof(path) - 1);
+  if (err != UC_ERR_OK) {
+    return -14;
+  }
+  path[sizeof(path) - 1] = '\0';
+
+  struct stat host;
+  if (fstatat(dirfd, path, &host, flags) < 0) {
+    return -errno;
+  }
+
+  struct linux_arm64_stat guest = {
+    .st_dev = host.st_dev,
+    .st_ino = host.st_ino,
+    .st_mode = host.st_mode,
+    .st_nlink = host.st_nlink,
+    .st_uid = host.st_uid,
+    .st_gid = host.st_gid,
+    .st_rdev = host.st_rdev,
+    .st_size = host.st_size,
+    .st_blksize = host.st_blksize,
+    .st_blocks = host.st_blocks,
+    .st_atime_sec = host.st_atim.tv_sec,
+    .st_atime_nsec = host.st_atim.tv_nsec,
+    .st_mtime_sec = host.st_mtim.tv_sec,
+    .st_mtime_nsec = host.st_mtim.tv_nsec,
+    .st_ctime_sec = host.st_ctim.tv_sec,
+    .st_ctime_nsec = host.st_ctim.tv_nsec,
+  };
+
+  err = uc_mem_write(uc, stat_addr, &guest, sizeof(guest));
+  if (err != UC_ERR_OK) {
+    return -14;
+  }
+  return 0;
+}
+
 // 80
 static long lunix_sys_fstat(uc_engine *uc, int fd, uint64_t stat_addr) {
   struct stat host;
@@ -124,7 +172,7 @@ static long lunix_sys_exit(uc_engine *uc, int status) {
 
 // 93
 static long lunix_sys_exit_group(uc_engine *uc, int status) {
-  uc=uc; status=status; lunix_log("[lunix] exit_group: %d\n", status);
+  status=status;
   uc_emu_stop(uc);
   return 0;
 }
@@ -139,6 +187,18 @@ static long lunix_sys_set_tid_address(uc_engine *uc, uint64_t tidptr) {
 static long lunix_sys_set_robust_list(uc_engine *uc, uint64_t head, uint64_t len) {
   uc=uc;head=head;len=len;
   return 0;
+}
+
+// 174
+static long lunix_sys_getuid(uc_engine *uc) {
+  uc=uc;
+  return getuid();
+}
+
+// 175
+static long lunix_sys_geteuid(uc_engine *uc) {
+  uc=uc;
+  return getuid();
 }
 
 // 214
@@ -230,12 +290,18 @@ long lunix_syscall(uc_engine *uc) {
   lunix_debug("[lunix] r3: %lu\n", r3);
 
   switch (number) {
+    case 29:
+      return lunix_sys_ioctl(uc, r0, r1, r2);
+
     case 64:
       return lunix_sys_write(uc, (int)r0, r1, r2);
 
     case 78:
       return lunix_sys_readlinkat(uc, (int)r0, r1, r2, r3);
    
+    case 79:
+      return lunix_sys_newfstat(uc, (int)r0, r1, r2, (int)r3);
+
     case 80:
       return lunix_sys_fstat(uc, (int)r0, r1);
 
@@ -250,6 +316,12 @@ long lunix_syscall(uc_engine *uc) {
 
     case 99:
       return lunix_sys_set_robust_list(uc, r0, r1);
+
+    case 174:
+      return lunix_sys_getuid(uc);
+
+    case 175:
+      return lunix_sys_geteuid(uc);
 
     case 214:
       return lunix_sys_brk(uc, r0);

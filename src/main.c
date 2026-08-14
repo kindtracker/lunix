@@ -9,53 +9,75 @@
 
 extern int load_elf(const char *path, uc_engine *uc, uint64_t *entry);
 
-static int setup_stack(uc_engine *uc, const char *path, int stack_top, int stack_size) {
-  uc_err err = uc_mem_map(uc, stack_top - stack_size, stack_size, UC_PROT_READ | UC_PROT_WRITE);
+static int setup_stack(uc_engine *uc, int stack_top, int stack_size, int argc, const char **argv) {
+  uc_err err = uc_mem_map(
+      uc,
+      stack_top - stack_size,
+      stack_size,
+      UC_PROT_READ | UC_PROT_WRITE
+  );
+
   if (err != UC_ERR_OK) {
     fprintf(stderr, "[lunix] failed to map stack: %s\n", uc_strerror(err));
     return -1;
   }
 
-  uint64_t sp = stack_top;
+  uint64_t sp = stack_top - 16;
   sp &= ~0xFULL;
 
-  size_t path_len = strlen(path) + 1;
-  sp -= path_len;
-
-  uint64_t name_addr = sp;
-  err = uc_mem_write(uc, name_addr, path, path_len);
-  if (err != UC_ERR_OK) {
+  uint64_t *arg_addrs = malloc(argc * sizeof(uint64_t));
+  if (!arg_addrs) {
     return -1;
+  }
+
+  for (int i = argc - 1; i >= 0; i--) {
+    size_t len = strlen(argv[i]) + 1;
+    sp -= len;
+    err = uc_mem_write(uc, sp, argv[i], len);
+    if (err != UC_ERR_OK) {
+      free(arg_addrs);
+      return -1;
+    }
+    arg_addrs[i] = sp;
   }
 
   sp &= ~0xFULL;
 
-  // envp[0]
-  sp -= 8;
   uint64_t zero = 0;
+
+  sp -= 8;
+
   err = uc_mem_write(uc, sp, &zero, 8);
   if (err != UC_ERR_OK) {
+    free(arg_addrs);
     return -1;
   }
 
-  // argv[1]
   sp -= 8;
+
   err = uc_mem_write(uc, sp, &zero, 8);
   if (err != UC_ERR_OK) {
+    free(arg_addrs);
     return -1;
   }
 
-  // argv[0]
-  sp -= 8;
-  err = uc_mem_write(uc, sp, &name_addr, 8);
-  if (err != UC_ERR_OK) {
-    return -1;
+  for (int i = argc - 1; i >= 0; i--) {
+    sp -= 8;
+
+    err = uc_mem_write(uc, sp, &arg_addrs[i], 8);
+    if (err != UC_ERR_OK) {
+      free(arg_addrs);
+      return -1;
+    }
   }
 
-  // argc
-  uint64_t argc = 1;
+  free(arg_addrs);
+
   sp -= 8;
-  err = uc_mem_write(uc, sp, &argc, 8);
+
+  uint64_t guest_argc = argc;
+
+  err = uc_mem_write(uc, sp, &guest_argc, 8);
   if (err != UC_ERR_OK) {
     return -1;
   }
@@ -64,6 +86,7 @@ static int setup_stack(uc_engine *uc, const char *path, int stack_top, int stack
   if (err != UC_ERR_OK) {
     return -1;
   }
+
   return 0;
 }
 
@@ -87,7 +110,8 @@ static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user
 
 int main(int argc, const char **argv) {
   if (argc < 2) {
-    printf("USAGE: lunix [PATH]");
+    printf("USAGE: lunix [PATH] [ARGS...]\n");
+    return 0;
   }
   lunix_log("[lunix] v0.1.0\n");
 
@@ -114,7 +138,10 @@ int main(int argc, const char **argv) {
     return 1;
   }
 
-  setup_stack(uc, path, 0x7ffff000, 0x10000);
+  if (setup_stack(uc, 0x80000000, 0x10000, argc-1, argv+1) != 0) {
+    fprintf(stderr, "[lunix] failed to setup stack\n");
+    return 1;
+  }
   uc_reg_write(uc, UC_ARM64_REG_PC, &entry);
 
   uc_hook hook;

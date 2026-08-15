@@ -509,6 +509,39 @@ static long lunix_sys_brk(uc_engine *uc, uint64_t address) {
   return heap_end;
 }
 
+// 222
+static long lunix_sys_mmap(uc_engine *uc, uint64_t addr, uint64_t len, int prot, int flags, int fd, off_t offset) {
+  fd=fd;offset=offset;
+  static uint64_t mmap_next = LUNIX_MMAP_BASE;
+  if (len == 0) return -EINVAL;
+
+  uint64_t size = (len + 0xfffULL) & ~0xfffULL;
+  uint64_t start = addr & ~0xfffULL;
+
+  if (addr == 0)
+    start = mmap_next;
+
+  uint64_t end = start + size;
+  if (end <= start) return -EINVAL;
+
+  int perms = 0;
+  if (prot & PROT_READ) perms |= UC_PROT_READ;
+  if (prot & PROT_WRITE) perms |= UC_PROT_WRITE;
+  if (prot & PROT_EXEC) perms |= UC_PROT_EXEC;
+
+  uc_err err = uc_mem_map(uc, start, size, perms);
+  if (err != UC_ERR_OK) {
+    lunix_log("[lunix] mmap: start=0x%lx size=0x%lx prot=0x%x flags=0x%x\n", start, size, prot, flags);
+    lunix_log("[lunix] mmap: %s\n", uc_strerror(err));
+    return -ENOMEM;
+  }
+
+  if (addr == 0)
+    mmap_next = end;
+
+  return start;
+}
+
 // 226
 static long lunix_sys_mprotect(uc_engine *uc, uint64_t addr, uint64_t len, int prot) {
   uint64_t start = addr & ~0xfffULL;
@@ -668,6 +701,15 @@ long lunix_syscall(uc_engine *uc) {
 
     case 214:
       return lunix_sys_brk(uc, r0);
+
+    case 222:
+      uint64_t r4;
+      uint64_t r5;
+      uc_reg_read(uc, UC_ARM64_REG_X4, &r4);
+      uc_reg_read(uc, UC_ARM64_REG_X5, &r5);
+      lunix_debug("[lunix] r4: %lu\n", r4);
+      lunix_debug("[lunix] r5: %lu\n", r5);
+      return lunix_sys_mmap(uc, r0, r1, (int)r2, (int)r3, (int)r4, (off_t)r5);
 
     case 261:
       return lunix_sys_prlimit64(uc, r0, r1, r2, r3);

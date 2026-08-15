@@ -10,13 +10,7 @@
 extern int load_elf(const char *path, uc_engine *uc, uint64_t *entry);
 
 static int setup_stack(uc_engine *uc, int stack_top, int stack_size, int argc, const char **argv) {
-  uc_err err = uc_mem_map(
-      uc,
-      stack_top - stack_size,
-      stack_size,
-      UC_PROT_READ | UC_PROT_WRITE
-  );
-
+  uc_err err = uc_mem_map(uc, stack_top - stack_size, stack_size,UC_PROT_READ | UC_PROT_WRITE);
   if (err != UC_ERR_OK) {
     fprintf(stderr, "[lunix] failed to map stack: %s\n", uc_strerror(err));
     return -1;

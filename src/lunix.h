@@ -4,8 +4,8 @@
 #define LUNIX_HEAP_BASE 0x50000000ULL
 #define LUNIX_HEAP_SIZE 0x1000000ULL
 
-// #define LUNIX_ENABLE_LOG
-// #define LUNIX_ENABLE_DEBUG
+#define LUNIX_ENABLE_LOG
+#define LUNIX_ENABLE_DEBUG
 
 #ifdef LUNIX_ENABLE_LOG
 #define lunix_log printf

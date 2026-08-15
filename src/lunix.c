@@ -39,6 +39,58 @@ struct linux_arm64_stat {
   uint32_t __unused5;
 };
 
+struct linux_dirent64 {
+  uint64_t d_ino;
+  int64_t  d_off;
+  unsigned short d_reclen;
+  unsigned char d_type;
+  char d_name[];
+};
+
+static int lunix_translate_open_flags(int guest_flags) {
+  int host_flags = 0;
+  switch (guest_flags & 3) {
+    case 0:
+      host_flags |= O_RDONLY;
+      break;
+    case 1:
+      host_flags |= O_WRONLY;
+      break;
+    case 2:
+      host_flags |= O_RDWR;
+      break;
+    default:
+      return -1;
+  }
+
+  if (guest_flags & 0x40) host_flags |= O_CREAT;
+  if (guest_flags & 0x80) host_flags |= O_EXCL;
+  if (guest_flags & 0x200) host_flags |= O_TRUNC;
+  if (guest_flags & 0x400) host_flags |= O_APPEND;
+  if (guest_flags & 0x800) host_flags |= O_NONBLOCK;
+  if (guest_flags & 0x10000) host_flags |= O_DIRECTORY;
+  if (guest_flags & 0x20000) host_flags |= O_NOFOLLOW;
+  if (guest_flags & 0x80000) host_flags |= O_CLOEXEC;
+  return host_flags;
+}
+
+static long lunix_read_string(uc_engine *uc,  uint64_t addr, char *out, size_t out_size) {
+  for (size_t i = 0; i < out_size - 1; i++) {
+    uint8_t c;
+    uc_err err = uc_mem_read(uc, addr + i, &c, 1);
+    if (err != UC_ERR_OK) {
+      return -EFAULT;
+    }
+    out[i] = (char)c;
+    if (c == '\0') {
+      return 0;
+    }
+  }
+
+  out[out_size - 1] = '\0';
+  return -ENAMETOOLONG;
+}
+
 // 29
 static long lunix_sys_ioctl(uc_engine *uc, uint64_t fd, uint64_t cmd, uint64_t arg) {
   uc=uc;
@@ -49,12 +101,13 @@ static long lunix_sys_ioctl(uc_engine *uc, uint64_t fd, uint64_t cmd, uint64_t a
 // 56
 static long lunix_sys_openat(uc_engine *uc, int dirfd, uint64_t pathname_addr, int flags, mode_t mode) {
   char path[4096];
-  uc_err err = uc_mem_read(uc, pathname_addr, path, sizeof(path)-1);
-  if (err != UC_ERR_OK) {
-    return -EFAULT;
+  long result = lunix_read_string(uc, pathname_addr, path, sizeof(path));
+  if (result < 0) {
+    return result;
   }
   path[sizeof(path) - 1] = '\0';
 
+  flags = lunix_translate_open_flags(flags);
   int fd = openat(dirfd, path, flags, mode);
   if (fd < 0) {
     return -errno;
@@ -88,9 +141,9 @@ static long lunix_sys_readlinkat(uc_engine *uc, int dirfd, uint64_t pathname, ui
   }
 
   char path[4096];
-  uc_err err = uc_mem_read(uc, pathname, path, sizeof(path) - 1);
-  if (err != UC_ERR_OK) {
-    return -14;
+  long sresult = lunix_read_string(uc, pathname, path, sizeof(path));
+  if (sresult < 0) {
+    return sresult;
   }
   path[sizeof(path) - 1] = '\0';
   char *data = malloc(len);
@@ -100,7 +153,7 @@ static long lunix_sys_readlinkat(uc_engine *uc, int dirfd, uint64_t pathname, ui
 
   ssize_t result = readlinkat(dirfd, path, data, len);
   if (result >= 0) {
-    err = uc_mem_write(uc, buf, data, result);
+    uc_err err = uc_mem_write(uc, buf, data, result);
     if (err != UC_ERR_OK) {
       result = -14;
     }
@@ -112,9 +165,9 @@ static long lunix_sys_readlinkat(uc_engine *uc, int dirfd, uint64_t pathname, ui
 // 79
 static long lunix_sys_newfstat(uc_engine *uc, int dirfd, uint64_t pathname_addr, uint64_t stat_addr, int flags) {
   char path[4096];
-  uc_err err = uc_mem_read(uc, pathname_addr, path, sizeof(path) - 1);
-  if (err != UC_ERR_OK) {
-    return -14;
+  long result = lunix_read_string(uc, pathname_addr, path, sizeof(path));
+  if (result < 0) {
+    return result;
   }
   path[sizeof(path) - 1] = '\0';
 
@@ -142,7 +195,7 @@ static long lunix_sys_newfstat(uc_engine *uc, int dirfd, uint64_t pathname_addr,
     .st_ctime_nsec = host.st_ctim.tv_nsec,
   };
 
-  err = uc_mem_write(uc, stat_addr, &guest, sizeof(guest));
+  uc_err err = uc_mem_write(uc, stat_addr, &guest, sizeof(guest));
   if (err != UC_ERR_OK) {
     return -14;
   }

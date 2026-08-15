@@ -17,6 +17,7 @@
 #include <unicorn/unicorn.h>
 
 #include "lunix.h"
+#include "process.h"
 
 typedef uint32_t fd_t;
 
@@ -88,7 +89,8 @@ static int lunix_translate_open_flags(int guest_flags) {
   return host_flags;
 }
 
-static long lunix_read_string(uc_engine *uc,  uint64_t addr, char *out, size_t out_size) {
+static long lunix_read_string(uc_engine *uc, lunix_process_t *process, uint64_t addr, char *out, size_t out_size) {
+  process=process;
   for (size_t i = 0; i < out_size - 1; i++) {
     uint8_t c;
     uc_err err = uc_mem_read(uc, addr + i, &c, 1);
@@ -106,7 +108,8 @@ static long lunix_read_string(uc_engine *uc,  uint64_t addr, char *out, size_t o
 }
 
 // 17
-static long lunix_sys_getcwd(uc_engine *uc, uint64_t buf_addr, uint64_t size) {
+static long lunix_sys_getcwd(uc_engine *uc, lunix_process_t *process, uint64_t buf_addr, uint64_t size) {
+  process=process;
   char buf[4096];
   if (getcwd(buf, sizeof(buf)) == NULL) {
     return -errno;
@@ -125,8 +128,8 @@ static long lunix_sys_getcwd(uc_engine *uc, uint64_t buf_addr, uint64_t size) {
 }
 
 // 25
-static long lunix_sys_fcntl(uc_engine *uc, int fd, int cmd, uint64_t arg) {
-  uc=uc;
+static long lunix_sys_fcntl(uc_engine *uc, lunix_process_t *process, int fd, int cmd, uint64_t arg) {
+  process=process;uc=uc;
   switch (cmd) {
     case F_GETFD:
     case F_SETFD:
@@ -139,16 +142,17 @@ static long lunix_sys_fcntl(uc_engine *uc, int fd, int cmd, uint64_t arg) {
 }
 
 // 29
-static long lunix_sys_ioctl(uc_engine *uc, uint64_t fd, uint64_t cmd, uint64_t arg) {
-  uc=uc;
+static long lunix_sys_ioctl(uc_engine *uc, lunix_process_t *process, uint64_t fd, uint64_t cmd, uint64_t arg) {
+  process=process;uc=uc;
   int result = ioctl(fd, cmd, arg);
   return result;
 }
 
 // 56
-static long lunix_sys_openat(uc_engine *uc, int dirfd, uint64_t pathname_addr, int flags, mode_t mode) {
+static long lunix_sys_openat(uc_engine *uc, lunix_process_t *process, int dirfd, uint64_t pathname_addr, int flags, mode_t mode) {
+  process=process;
   char path[4096];
-  long result = lunix_read_string(uc, pathname_addr, path, sizeof(path));
+  long result = lunix_read_string(uc, process, pathname_addr, path, sizeof(path));
   if (result < 0) {
     return result;
   }
@@ -163,8 +167,8 @@ static long lunix_sys_openat(uc_engine *uc, int dirfd, uint64_t pathname_addr, i
 }
 
 // 57
-static long lunix_sys_close(uc_engine *uc, int fd) {
-  uc = uc;
+static long lunix_sys_close(uc_engine *uc, lunix_process_t *process, int fd) {
+  process=process;uc=uc;
   if (close(fd) < 0) {
     return -errno;
   }
@@ -172,7 +176,8 @@ static long lunix_sys_close(uc_engine *uc, int fd) {
 }
 
 // 61
-static long lunix_sys_getdents64(uc_engine *uc, int fd, uint64_t dirp, unsigned int count) {
+static long lunix_sys_getdents64(uc_engine *uc, lunix_process_t *process, int fd, uint64_t dirp, unsigned int count) {
+  process=process;
   char *buffer = malloc(count);
   if (!buffer) {
     return -ENOMEM;
@@ -245,8 +250,8 @@ static long lunix_sys_getdents64(uc_engine *uc, int fd, uint64_t dirp, unsigned 
 }
 
 // 62
-static long lunix_sys_lseek(uc_engine *uc, int fd, off_t offset, int whence) {
-  uc=uc;
+static long lunix_sys_lseek(uc_engine *uc, lunix_process_t *process, int fd, off_t offset, int whence) {
+  process=process;uc=uc;
   off_t result = lseek(fd, offset, whence);
   if (result == (off_t)-1) {
     return -errno;
@@ -255,7 +260,8 @@ static long lunix_sys_lseek(uc_engine *uc, int fd, off_t offset, int whence) {
 }
 
 // 63
-static long lunix_sys_read(uc_engine *uc, int fd, uint64_t buf_addr, unsigned long count) {
+static long lunix_sys_read(uc_engine *uc, lunix_process_t *process, int fd, uint64_t buf_addr, unsigned long count) {
+  process=process;
   char *buf = malloc(count);
   ssize_t result = read(fd, buf, count);
   if (!result) {
@@ -272,7 +278,8 @@ static long lunix_sys_read(uc_engine *uc, int fd, uint64_t buf_addr, unsigned lo
 }
 
 // 64
-static long lunix_sys_write(uc_engine *uc, int fd, uint64_t buf, unsigned long count) {
+static long lunix_sys_write(uc_engine *uc, lunix_process_t *process, int fd, uint64_t buf, unsigned long count) {
+  process=process;
   char *data = malloc(count + 1);
   if (!data) {
     return -12;
@@ -291,7 +298,8 @@ static long lunix_sys_write(uc_engine *uc, int fd, uint64_t buf, unsigned long c
 }
 
 // 71
-static long lunix_sys_sendfile(uc_engine *uc, int out_fd, int in_fd, uint64_t offset_addr, uint64_t count) {
+static long lunix_sys_sendfile(uc_engine *uc, lunix_process_t *process, int out_fd, int in_fd, uint64_t offset_addr, uint64_t count) {
+  process=process;
   int64_t offset;
   if (offset_addr != 0) {
     uc_err err = uc_mem_read(uc, offset_addr, &offset, sizeof(offset));
@@ -315,13 +323,14 @@ static long lunix_sys_sendfile(uc_engine *uc, int out_fd, int in_fd, uint64_t of
 }
 
 // 78
-static long lunix_sys_readlinkat(uc_engine *uc, int dirfd, uint64_t pathname, uint64_t buf, uint64_t len) {
+static long lunix_sys_readlinkat(uc_engine *uc, lunix_process_t *process, int dirfd, uint64_t pathname, uint64_t buf, uint64_t len) {
+  process=process;
   if (len == 0) {
     return 0;
   }
 
   char path[4096];
-  long sresult = lunix_read_string(uc, pathname, path, sizeof(path));
+  long sresult = lunix_read_string(uc, process, pathname, path, sizeof(path));
   if (sresult < 0) {
     return sresult;
   }
@@ -343,9 +352,10 @@ static long lunix_sys_readlinkat(uc_engine *uc, int dirfd, uint64_t pathname, ui
 }
 
 // 79
-static long lunix_sys_newfstat(uc_engine *uc, int dirfd, uint64_t pathname_addr, uint64_t stat_addr, int flags) {
+static long lunix_sys_newfstat(uc_engine *uc, lunix_process_t *process, int dirfd, uint64_t pathname_addr, uint64_t stat_addr, int flags) {
+  process=process;
   char path[4096];
-  long result = lunix_read_string(uc, pathname_addr, path, sizeof(path));
+  long result = lunix_read_string(uc, process, pathname_addr, path, sizeof(path));
   if (result < 0) {
     return result;
   }
@@ -383,7 +393,8 @@ static long lunix_sys_newfstat(uc_engine *uc, int dirfd, uint64_t pathname_addr,
 }
 
 // 80
-static long lunix_sys_fstat(uc_engine *uc, int fd, uint64_t stat_addr) {
+static long lunix_sys_fstat(uc_engine *uc, lunix_process_t *process, int fd, uint64_t stat_addr) {
+  process=process;
   struct stat host;
   if (fstat(fd, &host) < 0) {
     return -errno;
@@ -416,33 +427,39 @@ static long lunix_sys_fstat(uc_engine *uc, int fd, uint64_t stat_addr) {
 }
 
 // 93
-static long lunix_sys_exit(uc_engine *uc, int status) {
-  uc=uc; status=status; lunix_log("[lunix] exit: %d\n", status);
+static long lunix_sys_exit(uc_engine *uc, lunix_process_t *process, int status) {
+  status=status;
+  lunix_log("[lunix] exit: %d\n", status);
+  process->exit_status = status;
+  process->exited = true;
   uc_emu_stop(uc);
   return 0;
 }
 
-// 93
-static long lunix_sys_exit_group(uc_engine *uc, int status) {
+// 94
+static long lunix_sys_exit_group(uc_engine *uc, lunix_process_t *process, int status) {
   status=status;
+  process->exit_status = status;
+  process->exited = true;
   uc_emu_stop(uc);
   return 0;
 }
 
 // 96
-static long lunix_sys_set_tid_address(uc_engine *uc, uint64_t tidptr) {
-  uc=uc;tidptr=tidptr;
+static long lunix_sys_set_tid_address(uc_engine *uc, lunix_process_t *process, uint64_t tidptr) {
+  process=process;uc=uc;tidptr=tidptr;
   return 0;
 }
 
 // 99
-static long lunix_sys_set_robust_list(uc_engine *uc, uint64_t head, uint64_t len) {
-  uc=uc;head=head;len=len;
+static long lunix_sys_set_robust_list(uc_engine *uc, lunix_process_t *process, uint64_t head, uint64_t len) {
+  process=process;uc=uc;head=head;len=len;
   return 0;
 }
 
 // 113
-static long lunix_sys_clock_gettime(uc_engine *uc, int which_clock, uint64_t tp) {
+static long lunix_sys_clock_gettime(uc_engine *uc, lunix_process_t *process, int which_clock, uint64_t tp) {
+  process=process;
   struct timespec ts;
   if (clock_gettime(which_clock, &ts) < 0) {
     return -errno;
@@ -456,37 +473,44 @@ static long lunix_sys_clock_gettime(uc_engine *uc, int which_clock, uint64_t tp)
 }
 
 // 134
-static long lunix_sys_rt_sigaction(uc_engine *uc, int sig, uint64_t act, uint64_t oldact, size_t sigsetsize) {
-  uc=uc;sig=sig;act=act;oldact=oldact;sigsetsize=sigsetsize;
+static long lunix_sys_rt_sigaction(uc_engine *uc, lunix_process_t *process, int sig, uint64_t act, uint64_t oldact, size_t sigsetsize) {
+  process=process;uc=uc;sig=sig;act=act;oldact=oldact;sigsetsize=sigsetsize;
+  return 0;
+}
+
+// 134
+static long lunix_sys_rt_sigprocmask(uc_engine *uc, lunix_process_t *process, int how, uint64_t set, uint64_t oldset, size_t sigsetsize) {
+  process=process;uc=uc;how=how;set=set;oldset=oldset;sigsetsize=sigsetsize;
   return 0;
 }
 
 // 144
-static long lunix_sys_setgid(uc_engine *uc, uint64_t gid) {
-  uc=uc;gid=gid;
+static long lunix_sys_setgid(uc_engine *uc, lunix_process_t *process, uint64_t gid) {
+  process=process;uc=uc;gid=gid;
   return 0;
 }
 
 // 145
-static long lunix_sys_setregid(uc_engine *uc, uint64_t egid) {
-  uc=uc;egid=egid;
+static long lunix_sys_setregid(uc_engine *uc, lunix_process_t *process, uint64_t egid) {
+  process=process;uc=uc;egid=egid;
   return 0;
 }
 
 // 146
-static long lunix_sys_setuid(uc_engine *uc, uint64_t uid) {
-  uc=uc;uid=uid;
+static long lunix_sys_setuid(uc_engine *uc, lunix_process_t *process, uint64_t uid) {
+  process=process;uc=uc;uid=uid;
   return 0;
 }
 
 // 147
-static long lunix_sys_setreuid(uc_engine *uc, uint64_t euid) {
-  uc=uc;euid=euid;
+static long lunix_sys_setreuid(uc_engine *uc, lunix_process_t *process, uint64_t euid) {
+  process=process;uc=uc;euid=euid;
   return 0;
 }
 
 // 160
-static long lunix_sys_uname(uc_engine *uc, uint64_t addr) {
+static long lunix_sys_uname(uc_engine *uc, lunix_process_t *process, uint64_t addr) {
+  process=process;
   struct linux_utsname uts = {0};
   strcpy(uts.sysname, "Linux");
   strcpy(uts.nodename, "lunix");
@@ -538,8 +562,8 @@ static long lunix_sys_getegid(uc_engine *uc) {
 }
 
 // 214
-static long lunix_sys_brk(uc_engine *uc, uint64_t address) {
-  uc=uc;
+static long lunix_sys_brk(uc_engine *uc, lunix_process_t *process, uint64_t address) {
+  process=process;uc=uc;
   if (address == 0) {
     return heap_end;
   }
@@ -551,8 +575,8 @@ static long lunix_sys_brk(uc_engine *uc, uint64_t address) {
 }
 
 // 222
-static long lunix_sys_mmap(uc_engine *uc, uint64_t addr, uint64_t len, int prot, int flags, int fd, off_t offset) {
-  flags=flags;fd=fd;offset=offset;
+static long lunix_sys_mmap(uc_engine *uc, lunix_process_t *process, uint64_t addr, uint64_t len, int prot, int flags, int fd, off_t offset) {
+  process=process;flags=flags;fd=fd;offset=offset;
   static uint64_t mmap_next = LUNIX_MMAP_BASE;
   if (len == 0) return -EINVAL;
 
@@ -584,7 +608,8 @@ static long lunix_sys_mmap(uc_engine *uc, uint64_t addr, uint64_t len, int prot,
 }
 
 // 226
-static long lunix_sys_mprotect(uc_engine *uc, uint64_t addr, uint64_t len, int prot) {
+static long lunix_sys_mprotect(uc_engine *uc, lunix_process_t *process, uint64_t addr, uint64_t len, int prot) {
+  process=process;
   uint64_t start = addr & ~0xfffULL;
   uint64_t end = (addr + len + 0xfff) & ~0xfffULL;
   if (end <= start) {
@@ -606,19 +631,20 @@ static long lunix_sys_mprotect(uc_engine *uc, uint64_t addr, uint64_t len, int p
 }
 
 // 233
-static long lunix_sys_madvise(uc_engine *uc, uint64_t addr, uint64_t len, int advice) {
-  uc=uc;addr=addr;len=len;advice=advice;
+static long lunix_sys_madvise(uc_engine *uc, lunix_process_t *process, uint64_t addr, uint64_t len, int advice) {
+  process=process;uc=uc;addr=addr;len=len;advice=advice;
   return 0;
 }
 
 // 261
-static long lunix_sys_prlimit64(uc_engine *uc, uint64_t pid, uint64_t resource, uint64_t new_limit, uint64_t old_limit) {
-  uc=uc;pid=pid;resource=resource;new_limit=new_limit;old_limit=old_limit;
+static long lunix_sys_prlimit64(uc_engine *uc, lunix_process_t *process, uint64_t pid, uint64_t resource, uint64_t new_limit, uint64_t old_limit) {
+  process=process;uc=uc;pid=pid;resource=resource;new_limit=new_limit;old_limit=old_limit;
   return 0;
 }
 
 // 278
-static long lunix_sys_getrandom(uc_engine *uc, uint64_t buf, uint64_t len, unsigned int flags) {
+static long lunix_sys_getrandom(uc_engine *uc, lunix_process_t *process, uint64_t buf, uint64_t len, unsigned int flags) {
+  process=process;
   uint8_t *data = malloc(len);
   if (!data) {
     return -12;
@@ -640,12 +666,12 @@ static long lunix_sys_getrandom(uc_engine *uc, uint64_t buf, uint64_t len, unsig
 }
 
 // 293
-static long lunix_sys_rseq(uc_engine *uc, uint64_t rseq, uint64_t rseq_len, uint64_t flags, uint64_t sig) {
-  uc=uc;rseq=rseq;rseq_len=rseq_len;flags=flags;sig=sig;
+static long lunix_sys_rseq(uc_engine *uc, lunix_process_t *process, uint64_t rseq, uint64_t rseq_len, uint64_t flags, uint64_t sig) {
+  process=process;uc=uc;rseq=rseq;rseq_len=rseq_len;flags=flags;sig=sig;
   return 0;
 }
 
-long lunix_syscall(uc_engine *uc) {
+long lunix_syscall(uc_engine *uc, lunix_process_t *process) {
   uint64_t number;
   uint64_t r0;
   uint64_t r1;
@@ -666,76 +692,79 @@ long lunix_syscall(uc_engine *uc) {
 
   switch (number) {
     case 17:
-      return lunix_sys_getcwd(uc, r0, r1);
+      return lunix_sys_getcwd(uc, process, r0, r1);
 
     case 25:
-      return lunix_sys_fcntl(uc, (int)r0, (int)r1, r2);
+      return lunix_sys_fcntl(uc, process, (int)r0, (int)r1, r2);
 
     case 29:
-      return lunix_sys_ioctl(uc, r0, r1, r2);
+      return lunix_sys_ioctl(uc, process, r0, r1, r2);
 
     case 56:
-      return lunix_sys_openat(uc, (int)r0, r1, (int)r2, (mode_t)r3);
+      return lunix_sys_openat(uc, process, (int)r0, r1, (int)r2, (mode_t)r3);
 
     case 57:
-      return lunix_sys_close(uc, (int)r0);
+      return lunix_sys_close(uc, process, (int)r0);
 
     case 61:
-      return lunix_sys_getdents64(uc, r0, r1, r2);
+      return lunix_sys_getdents64(uc, process, r0, r1, r2);
 
     case 62:
-      return lunix_sys_lseek(uc, (int)r0, (off_t)r1, (int)r2);
+      return lunix_sys_lseek(uc, process, (int)r0, (off_t)r1, (int)r2);
 
     case 63:
-      return lunix_sys_read(uc, (int)r0, r1, r2);
+      return lunix_sys_read(uc, process, (int)r0, r1, r2);
 
     case 64:
-      return lunix_sys_write(uc, (int)r0, r1, r2);
+      return lunix_sys_write(uc, process, (int)r0, r1, r2);
 
     case 71:
-      return lunix_sys_sendfile(uc, (int)r0, (int)r1, (int64_t)r2, (uint64_t)r3);
+      return lunix_sys_sendfile(uc, process, (int)r0, (int)r1, (int64_t)r2, (uint64_t)r3);
 
     case 78:
-      return lunix_sys_readlinkat(uc, (int)r0, r1, r2, r3);
+      return lunix_sys_readlinkat(uc, process, (int)r0, r1, r2, r3);
    
     case 79:
-      return lunix_sys_newfstat(uc, (int)r0, r1, r2, (int)r3);
+      return lunix_sys_newfstat(uc, process, (int)r0, r1, r2, (int)r3);
 
     case 80:
-      return lunix_sys_fstat(uc, (int)r0, r1);
+      return lunix_sys_fstat(uc, process, (int)r0, r1);
 
     case 93:
-      return lunix_sys_exit(uc, (int)r0);
+      return lunix_sys_exit(uc, process, (int)r0);
 
     case 94:
-      return lunix_sys_exit_group(uc, (int)r0);
+      return lunix_sys_exit_group(uc, process, (int)r0);
 
     case 96:
-      return lunix_sys_set_tid_address(uc, r0);
+      return lunix_sys_set_tid_address(uc, process, r0);
 
     case 99:
-      return lunix_sys_set_robust_list(uc, r0, r1);
+      return lunix_sys_set_robust_list(uc, process, r0, r1);
 
     case 113:
-      return lunix_sys_clock_gettime(uc, (int)r0, r1);
+      return lunix_sys_clock_gettime(uc, process, (int)r0, r1);
 
     case 134:
-      return lunix_sys_rt_sigaction(uc, (int)r0, r1, r2, r3);
+      return lunix_sys_rt_sigaction(uc, process, (int)r0, r1, r2, r3);
+    
+    case 135:
+      return lunix_sys_rt_sigprocmask(uc, process, (int)r0, r1, r2, r3);
 
     case 144:
-      return lunix_sys_setgid(uc, r0);
+      return lunix_sys_setgid(uc, process, r0);
 
     case 145:
-      return lunix_sys_setregid(uc, r0);
+      return lunix_sys_setregid(uc, process, r0);
 
     case 146:
-      return lunix_sys_setuid(uc, r0);
+      return lunix_sys_setuid(uc, process, r0);
 
     case 147:
-      return lunix_sys_setreuid(uc, r0);
+      return lunix_sys_setreuid(uc, process, r0);
 
     case 160:
-      return lunix_sys_uname(uc, r0);    
+      return lunix_sys_uname(uc, process, r0);    
 
     case 172:
       return lunix_sys_getpid(uc);
@@ -756,7 +785,7 @@ long lunix_syscall(uc_engine *uc) {
       return lunix_sys_getegid(uc);
 
     case 214:
-      return lunix_sys_brk(uc, r0);
+      return lunix_sys_brk(uc, process, r0);
 
     case 222:
       uint64_t r4;
@@ -765,22 +794,22 @@ long lunix_syscall(uc_engine *uc) {
       uc_reg_read(uc, UC_ARM64_REG_X5, &r5);
       lunix_debug("[lunix] r4: %lu\n", r4);
       lunix_debug("[lunix] r5: %lu\n", r5);
-      return lunix_sys_mmap(uc, r0, r1, (int)r2, (int)r3, (int)r4, (off_t)r5);
+      return lunix_sys_mmap(uc, process, r0, r1, (int)r2, (int)r3, (int)r4, (off_t)r5);
 
     case 261:
-      return lunix_sys_prlimit64(uc, r0, r1, r2, r3);
+      return lunix_sys_prlimit64(uc, process, r0, r1, r2, r3);
     
     case 226:
-      return lunix_sys_mprotect(uc, r0, r1, r2);
+      return lunix_sys_mprotect(uc, process, r0, r1, r2);
     
     case 233:
-      return lunix_sys_madvise(uc, r0, r1, (int)r2);
+      return lunix_sys_madvise(uc, process, r0, r1, (int)r2);
 
     case 278:
-      return lunix_sys_getrandom(uc, r0, r1, (unsigned int)r2);
+      return lunix_sys_getrandom(uc, process, r0, r1, (unsigned int)r2);
 
     case 293:
-      return lunix_sys_rseq(uc, r0, r1, r2, r3);
+      return lunix_sys_rseq(uc, process, r0, r1, r2, r3);
 
     default:
       lunix_log("[lunix] unimplemented syscall: %lu\n", number);

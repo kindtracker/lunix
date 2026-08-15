@@ -53,6 +53,14 @@ struct linux_dirent64 {
   char d_name[];
 };
 
+struct linux_utsname {
+  char sysname[65];
+  char nodename[65];
+  char release[65];
+  char version[65];
+  char machine[65];
+};
+
 static int lunix_translate_open_flags(int guest_flags) {
   int host_flags = 0;
   switch (guest_flags & 3) {
@@ -95,6 +103,25 @@ static long lunix_read_string(uc_engine *uc,  uint64_t addr, char *out, size_t o
 
   out[out_size - 1] = '\0';
   return -ENAMETOOLONG;
+}
+
+// 17
+static long lunix_sys_getcwd(uc_engine *uc, uint64_t buf_addr, uint64_t size) {
+  char buf[4096];
+  if (getcwd(buf, sizeof(buf)) == NULL) {
+    return -errno;
+  }
+  
+  size_t len = strlen(buf);
+  if (len > size) {
+    return -ERANGE;
+  }
+
+  uc_err err = uc_mem_write(uc, buf_addr, &buf, len);
+  if (err != UC_ERR_OK) {
+    return -EFAULT;
+  }
+  return buf_addr;
 }
 
 // 29
@@ -387,6 +414,12 @@ static long lunix_sys_clock_gettime(uc_engine *uc, int which_clock, uint64_t tp)
   return 0;
 }
 
+// 134
+static long lunix_sys_rt_sigaction(uc_engine *uc, int sig, uint64_t act, uint64_t oldact, size_t sigsetsize) {
+  uc=uc;sig=sig;act=act;oldact=oldact;sigsetsize=sigsetsize;
+  return 0;
+}
+
 // 144
 static long lunix_sys_setgid(uc_engine *uc, uint64_t gid) {
   uc=uc;gid=gid;
@@ -409,6 +442,34 @@ static long lunix_sys_setuid(uc_engine *uc, uint64_t uid) {
 static long lunix_sys_setreuid(uc_engine *uc, uint64_t euid) {
   uc=uc;euid=euid;
   return 0;
+}
+
+// 160
+static long lunix_sys_uname(uc_engine *uc, uint64_t addr) {
+  struct linux_utsname uts = {0};
+  strcpy(uts.sysname, "Linux");
+  strcpy(uts.nodename, "lunix");
+  strcpy(uts.release, "6.16.7");
+  strcpy(uts.version, "#1 lunix");
+  strcpy(uts.machine, "aarch64");
+
+  uc_err err = uc_mem_write(uc, addr, &uts, sizeof(uts));
+  if (err != UC_ERR_OK) {
+    return -EFAULT;
+  }
+  return 0;
+}
+
+// 172
+static long lunix_sys_getpid(uc_engine *uc) {
+  uc = uc;
+  return getpid();
+}
+
+// 173
+static long lunix_sys_getppid(uc_engine *uc) {
+  uc = uc;
+  return getppid();
 }
 
 // 174
@@ -524,6 +585,9 @@ long lunix_syscall(uc_engine *uc) {
   lunix_debug("[lunix] r3: %lu\n", r3);
 
   switch (number) {
+    case 17:
+      return lunix_sys_getcwd(uc, r0, r1);
+
     case 29:
       return lunix_sys_ioctl(uc, r0, r1, r2);
 
@@ -566,6 +630,9 @@ long lunix_syscall(uc_engine *uc) {
     case 113:
       return lunix_sys_clock_gettime(uc, (int)r0, r1);
 
+    case 134:
+      return lunix_sys_rt_sigaction(uc, (int)r0, r1, r2, r3);
+
     case 144:
       return lunix_sys_setgid(uc, r0);
 
@@ -577,6 +644,15 @@ long lunix_syscall(uc_engine *uc) {
 
     case 147:
       return lunix_sys_setreuid(uc, r0);
+
+    case 160:
+      return lunix_sys_uname(uc, r0);    
+
+    case 172:
+      return lunix_sys_getpid(uc);
+    
+    case 173:
+      return lunix_sys_getppid(uc);
 
     case 174:
       return lunix_sys_getuid(uc);

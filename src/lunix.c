@@ -230,6 +230,23 @@ static long lunix_sys_getdents64(uc_engine *uc, int fd, uint64_t dirp, unsigned 
   return written;
 }
 
+// 63
+static long lunix_sys_read(uc_engine *uc, int fd, uint64_t buf_addr, unsigned long count) {
+  char *buf = malloc(count);
+  ssize_t result = read(fd, buf, count);
+  if (!result) {
+    free(buf);
+    return -ENOMEM;
+  }
+
+  uc_err err = uc_mem_write(uc, buf_addr, buf, count);
+  free(buf);
+  if (err != UC_ERR_OK) {
+    return -EFAULT;
+  }
+  return result;
+}
+
 // 64
 static long lunix_sys_write(uc_engine *uc, int fd, uint64_t buf, unsigned long count) {
   char *data = malloc(count + 1);
@@ -564,6 +581,12 @@ static long lunix_sys_mprotect(uc_engine *uc, uint64_t addr, uint64_t len, int p
   return 0;
 }
 
+// 233
+static long lunix_sys_madvise(uc_engine *uc, uint64_t addr, uint64_t len, int advice) {
+  uc=uc;addr=addr;len=len;advice=advice;
+  return 0;
+}
+
 // 261
 static long lunix_sys_prlimit64(uc_engine *uc, uint64_t pid, uint64_t resource, uint64_t new_limit, uint64_t old_limit) {
   uc=uc;pid=pid;resource=resource;new_limit=new_limit;old_limit=old_limit;
@@ -632,6 +655,9 @@ long lunix_syscall(uc_engine *uc) {
 
     case 61:
       return lunix_sys_getdents64(uc, r0, r1, r2);
+
+    case 63:
+      return lunix_sys_read(uc, (int)r0, r1, r2);
 
     case 64:
       return lunix_sys_write(uc, (int)r0, r1, r2);
@@ -717,6 +743,9 @@ long lunix_syscall(uc_engine *uc) {
     case 226:
       return lunix_sys_mprotect(uc, r0, r1, r2);
     
+    case 233:
+      return lunix_sys_madvise(uc, r0, r1, (int)r2);
+
     case 278:
       return lunix_sys_getrandom(uc, r0, r1, (unsigned int)r2);
 

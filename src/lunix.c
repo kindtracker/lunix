@@ -1,10 +1,13 @@
 #include <sys/sendfile.h>
+#include <sys/syscall.h> 
 #include <sys/random.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 
 #include <stdio.h>
+#include <stddef.h>
+#include <string.h>
 #include <errno.h>
 
 #include <unistd.h>
@@ -119,12 +122,85 @@ static long lunix_sys_openat(uc_engine *uc, int dirfd, uint64_t pathname_addr, i
 }
 
 // 57
-static long lunix_sys_close(uc_engine *uc, fd_t fd) {
+static long lunix_sys_close(uc_engine *uc, int fd) {
   uc = uc;
   if (close(fd) < 0) {
     return -errno;
   }
   return 0;
+}
+
+// 61
+static long lunix_sys_getdents64(uc_engine *uc, int fd, uint64_t dirp, unsigned int count) {
+  char *buffer = malloc(count);
+  if (!buffer) {
+    return -ENOMEM;
+  }
+
+  long result = syscall(SYS_getdents64, fd, buffer, count);
+
+  if (result < 0) {
+    result = -errno;
+    free(buffer);
+    return result;
+  }
+
+  unsigned long pos = 0;
+  unsigned long written = 0;
+
+  while (pos < (unsigned long)result) {
+    struct linux_dirent64 *host_entry =
+      (struct linux_dirent64 *)(buffer + pos);
+
+    size_t name_len = strlen(host_entry->d_name);
+
+    size_t reclen =
+      offsetof(struct linux_dirent64, d_name) +
+      name_len + 1;
+
+    reclen = (reclen + 7) & ~7UL;
+
+    if (written + reclen > count) {
+      break;
+    }
+
+    struct linux_dirent64 guest_entry = {
+      .d_ino = host_entry->d_ino,
+      .d_off = host_entry->d_off,
+      .d_reclen = reclen,
+      .d_type = host_entry->d_type
+    };
+
+    uc_err err = uc_mem_write(
+      uc,
+      dirp + written,
+      &guest_entry,
+      offsetof(struct linux_dirent64, d_name)
+    );
+
+    if (err != UC_ERR_OK) {
+      free(buffer);
+      return -EFAULT;
+    }
+
+    err = uc_mem_write(
+      uc,
+      dirp + written + offsetof(struct linux_dirent64, d_name),
+      host_entry->d_name,
+      name_len + 1
+    );
+
+    if (err != UC_ERR_OK) {
+      free(buffer);
+      return -EFAULT;
+    }
+
+    written += reclen;
+    pos += host_entry->d_reclen;
+  }
+
+  free(buffer);
+  return written;
 }
 
 // 64
@@ -455,7 +531,10 @@ long lunix_syscall(uc_engine *uc) {
       return lunix_sys_openat(uc, (int)r0, r1, (int)r2, (mode_t)r3);
 
     case 57:
-      return lunix_sys_close(uc, (fd_t)r0);
+      return lunix_sys_close(uc, (int)r0);
+
+    case 61:
+      return lunix_sys_getdents64(uc, r0, r1, r2);
 
     case 64:
       return lunix_sys_write(uc, (int)r0, r1, r2);

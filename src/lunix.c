@@ -1,3 +1,4 @@
+#include <sys/sendfile.h>
 #include <sys/random.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -13,6 +14,8 @@
 #include <unicorn/unicorn.h>
 
 #include "lunix.h"
+
+typedef uint32_t fd_t;
 
 static uint64_t heap_end = LUNIX_HEAP_BASE;
 
@@ -115,6 +118,15 @@ static long lunix_sys_openat(uc_engine *uc, int dirfd, uint64_t pathname_addr, i
   return fd;
 }
 
+// 57
+static long lunix_sys_close(uc_engine *uc, fd_t fd) {
+  uc = uc;
+  if (close(fd) < 0) {
+    return -errno;
+  }
+  return 0;
+}
+
 // 64
 static long lunix_sys_write(uc_engine *uc, int fd, uint64_t buf, unsigned long count) {
   char *data = malloc(count + 1);
@@ -131,6 +143,30 @@ static long lunix_sys_write(uc_engine *uc, int fd, uint64_t buf, unsigned long c
   
   long result = write(fd, data, count);
   free(data);
+  return result;
+}
+
+// 71
+static long lunix_sys_sendfile(uc_engine *uc, int out_fd, int in_fd, uint64_t offset_addr, uint64_t count) {
+  int64_t offset;
+  if (offset_addr != 0) {
+    uc_err err = uc_mem_read(uc, offset_addr, &offset, sizeof(offset));
+    if (err != UC_ERR_OK) {
+      return -EFAULT;
+    }
+  }
+
+  ssize_t result = sendfile(out_fd, in_fd, offset_addr ? &offset : NULL, count);
+  if (result < 0) {
+    return -errno;
+  }
+
+  if (offset_addr != 0) {
+    uc_err err = uc_mem_write(uc, offset_addr, &offset, sizeof(offset));
+    if (err != UC_ERR_OK) {
+      return -EFAULT;
+    }
+  }
   return result;
 }
 
@@ -418,8 +454,14 @@ long lunix_syscall(uc_engine *uc) {
     case 56:
       return lunix_sys_openat(uc, (int)r0, r1, (int)r2, (mode_t)r3);
 
+    case 57:
+      return lunix_sys_close(uc, (fd_t)r0);
+
     case 64:
       return lunix_sys_write(uc, (int)r0, r1, r2);
+
+    case 71:
+      return lunix_sys_sendfile(uc, (int)r0, (int)r1, (int64_t)r2, (uint64_t)r3);
 
     case 78:
       return lunix_sys_readlinkat(uc, (int)r0, r1, r2, r3);

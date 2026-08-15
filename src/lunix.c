@@ -4,8 +4,11 @@
 #include <sys/stat.h>
 
 #include <stdio.h>
-#include <unistd.h>
 #include <errno.h>
+
+#include <unistd.h>
+#include <time.h>
+#include <fcntl.h>
 
 #include <unicorn/unicorn.h>
 
@@ -41,6 +44,22 @@ static long lunix_sys_ioctl(uc_engine *uc, uint64_t fd, uint64_t cmd, uint64_t a
   uc=uc;
   int result = ioctl(fd, cmd, arg);
   return result;
+}
+
+// 56
+static long lunix_sys_openat(uc_engine *uc, int dirfd, uint64_t pathname_addr, int flags, mode_t mode) {
+  char path[4096];
+  uc_err err = uc_mem_read(uc, pathname_addr, path, sizeof(path)-1);
+  if (err != UC_ERR_OK) {
+    return -EFAULT;
+  }
+  path[sizeof(path) - 1] = '\0';
+
+  int fd = openat(dirfd, path, flags, mode);
+  if (fd < 0) {
+    return -errno;
+  }
+  return fd;
 }
 
 // 64
@@ -189,6 +208,44 @@ static long lunix_sys_set_robust_list(uc_engine *uc, uint64_t head, uint64_t len
   return 0;
 }
 
+// 113
+static long lunix_sys_clock_gettime(uc_engine *uc, int which_clock, uint64_t tp) {
+  struct timespec ts;
+  if (clock_gettime(which_clock, &ts) < 0) {
+    return -errno;
+  }
+
+  uc_err err = uc_mem_write(uc, tp, &ts, sizeof(ts));
+  if (err != UC_ERR_OK) {
+    return -14;
+  }
+  return 0;
+}
+
+// 144
+static long lunix_sys_setgid(uc_engine *uc, uint64_t gid) {
+  uc=uc;gid=gid;
+  return 0;
+}
+
+// 145
+static long lunix_sys_setregid(uc_engine *uc, uint64_t egid) {
+  uc=uc;egid=egid;
+  return 0;
+}
+
+// 146
+static long lunix_sys_setuid(uc_engine *uc, uint64_t uid) {
+  uc=uc;uid=uid;
+  return 0;
+}
+
+// 147
+static long lunix_sys_setreuid(uc_engine *uc, uint64_t euid) {
+  uc=uc;euid=euid;
+  return 0;
+}
+
 // 174
 static long lunix_sys_getuid(uc_engine *uc) {
   uc=uc;
@@ -199,6 +256,18 @@ static long lunix_sys_getuid(uc_engine *uc) {
 static long lunix_sys_geteuid(uc_engine *uc) {
   uc=uc;
   return getuid();
+}
+
+// 176
+static long lunix_sys_getgid(uc_engine *uc) {
+  uc=uc;
+  return getgid();
+}
+
+// 177
+static long lunix_sys_getegid(uc_engine *uc) {
+  uc=uc;
+  return getgid();
 }
 
 // 214
@@ -293,6 +362,9 @@ long lunix_syscall(uc_engine *uc) {
     case 29:
       return lunix_sys_ioctl(uc, r0, r1, r2);
 
+    case 56:
+      return lunix_sys_openat(uc, (int)r0, r1, (int)r2, (mode_t)r3);
+
     case 64:
       return lunix_sys_write(uc, (int)r0, r1, r2);
 
@@ -317,11 +389,32 @@ long lunix_syscall(uc_engine *uc) {
     case 99:
       return lunix_sys_set_robust_list(uc, r0, r1);
 
+    case 113:
+      return lunix_sys_clock_gettime(uc, (int)r0, r1);
+
+    case 144:
+      return lunix_sys_setgid(uc, r0);
+
+    case 145:
+      return lunix_sys_setregid(uc, r0);
+
+    case 146:
+      return lunix_sys_setuid(uc, r0);
+
+    case 147:
+      return lunix_sys_setreuid(uc, r0);
+
     case 174:
       return lunix_sys_getuid(uc);
 
     case 175:
       return lunix_sys_geteuid(uc);
+
+    case 176:
+      return lunix_sys_getgid(uc);
+
+    case 177:
+      return lunix_sys_getegid(uc);
 
     case 214:
       return lunix_sys_brk(uc, r0);

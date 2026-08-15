@@ -124,6 +124,20 @@ static long lunix_sys_getcwd(uc_engine *uc, uint64_t buf_addr, uint64_t size) {
   return buf_addr;
 }
 
+// 25
+static long lunix_sys_fcntl(uc_engine *uc, int fd, int cmd, uint64_t arg) {
+  uc=uc;
+  switch (cmd) {
+    case F_GETFD:
+    case F_SETFD:
+    case F_GETFL:
+    case F_SETFL:
+      return fcntl(fd, cmd, arg);
+    default:
+      return -EINVAL;
+  }
+}
+
 // 29
 static long lunix_sys_ioctl(uc_engine *uc, uint64_t fd, uint64_t cmd, uint64_t arg) {
   uc=uc;
@@ -228,6 +242,16 @@ static long lunix_sys_getdents64(uc_engine *uc, int fd, uint64_t dirp, unsigned 
 
   free(buffer);
   return written;
+}
+
+// 62
+static long lunix_sys_lseek(uc_engine *uc, int fd, off_t offset, int whence) {
+  uc=uc;
+  off_t result = lseek(fd, offset, whence);
+  if (result == (off_t)-1) {
+    return -errno;
+  }
+  return result;
 }
 
 // 63
@@ -644,6 +668,9 @@ long lunix_syscall(uc_engine *uc) {
     case 17:
       return lunix_sys_getcwd(uc, r0, r1);
 
+    case 25:
+      return lunix_sys_fcntl(uc, (int)r0, (int)r1, r2);
+
     case 29:
       return lunix_sys_ioctl(uc, r0, r1, r2);
 
@@ -655,6 +682,9 @@ long lunix_syscall(uc_engine *uc) {
 
     case 61:
       return lunix_sys_getdents64(uc, r0, r1, r2);
+
+    case 62:
+      return lunix_sys_lseek(uc, (int)r0, (off_t)r1, (int)r2);
 
     case 63:
       return lunix_sys_read(uc, (int)r0, r1, r2);

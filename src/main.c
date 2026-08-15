@@ -15,8 +15,12 @@ int main(int argc, char **argv) {
   }
   lunix_log("[lunix] v0.1.0\n");
 
-  const char *path = argv[1];
-  int status = lunix_run(path, argc-1, argv+1);
-  status=status; lunix_log("[lunix] exit status: %d\n", status);
+  if (lunix_process_manager_start_server()) {
+    fprintf(stderr, "[lunix] failed to start server\n");
+    return -1;
+  }
+
+  lunix_process_manager_create(argc-1, argv+1);
+
   return 0;
 }

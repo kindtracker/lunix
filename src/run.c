@@ -197,7 +197,7 @@ void lunix_hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user_
 int lunix_run(const char *path, int argc, char **argv) {
   lunix_process_t *process = calloc(1, sizeof(lunix_process_t));
   if (!process) {
-    fprintf(stderr, "[lunix] failed to allocate process\n");
+    perror("[lunix] failed to allocate process");
     return 1;
   }
 

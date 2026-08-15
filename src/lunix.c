@@ -528,7 +528,7 @@ static long lunix_sys_brk(uc_engine *uc, uint64_t address) {
 
 // 222
 static long lunix_sys_mmap(uc_engine *uc, uint64_t addr, uint64_t len, int prot, int flags, int fd, off_t offset) {
-  fd=fd;offset=offset;
+  flags=flags;fd=fd;offset=offset;
   static uint64_t mmap_next = LUNIX_MMAP_BASE;
   if (len == 0) return -EINVAL;
 

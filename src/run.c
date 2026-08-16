@@ -102,7 +102,7 @@ int lunix_load_elf(const char *path, uc_engine *uc, uint64_t *entry) {
   return 0;
 }
 
-int lunix_setup_stack(uc_engine *uc, int stack_top, int stack_size, uint64_t *stack_addr, int argc, char **argv) {
+int lunix_setup_stack(uc_engine *uc, uint64_t stack_top, uint64_t stack_size, uint64_t *stack_addr, int argc, char **argv) {
   uc_err err = uc_mem_map(uc, stack_top - stack_size, stack_size,UC_PROT_READ | UC_PROT_WRITE);
   if (err != UC_ERR_OK) {
     fprintf(stderr, "[lunix] failed to map stack: %s\n", uc_strerror(err));
@@ -195,7 +195,7 @@ void lunix_hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user_
   }
 }
 
-int lunix_run(const char *path, int client_fd, int pid, int ppid, int argc, char **argv) {
+int lunix_run(const char *path, int client_fd, int pid, int ppid, uint64_t sp, int argc, char **argv) {
   lunix_process_t *process = calloc(1, sizeof(lunix_process_t));
   if (!process) {
     perror("[lunix] failed to allocate process");
@@ -222,10 +222,17 @@ int lunix_run(const char *path, int client_fd, int pid, int ppid, int argc, char
   }
 
   uint64_t stack_addr;
-  if (lunix_setup_stack(uc, LUNIX_STACK_TOP, LUNIX_STACK_SIZE, &stack_addr, argc, argv) != 0) {
-    fprintf(stderr, "[lunix] failed to setup stack\n");
-    return 1;
+  
+  uint64_t real_sp = sp == 1 ? LUNIX_STACK_TOP : sp;
+  if (sp == 1) {
+    if (lunix_setup_stack(uc, real_sp, LUNIX_STACK_SIZE, &stack_addr, argc, argv) != 0) {
+      fprintf(stderr, "[lunix] failed to setup stack\n");
+      return 1;
+    }
+  } else {
+    uc_reg_write(uc, UC_ARM64_REG_SP, &real_sp);
   }
+
   uc_reg_write(uc, UC_ARM64_REG_PC, &entry);
 
   uc_hook hook;
@@ -234,10 +241,13 @@ int lunix_run(const char *path, int client_fd, int pid, int ppid, int argc, char
   process->used = true;
   process->host_pid = getpid();
   process->client_fd = client_fd;
+  process->argc = argc;
+  process->argv = argv;
   process->pid = pid;
   process->ppid = ppid;
   process->uid = LUNIX_DEFAULT_UID;
   process->gid = LUNIX_DEFAULT_GID;
+  process->sp = real_sp;
   process->exited = false;
   process->exit_status = 0;
 

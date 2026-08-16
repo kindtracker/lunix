@@ -47,7 +47,7 @@ int lunix_process_manager_start_server() {
   return 0;
 };
 
-int lunix_process_manager_create(int ppid, int argc, char **argv) {
+int lunix_process_manager_create(int ppid, uint64_t sp, int argc, char **argv) {
   pid_t pid = fork();
   if (pid == -1) {
     perror("[lunix] failed to fork");
@@ -69,7 +69,7 @@ int lunix_process_manager_create(int ppid, int argc, char **argv) {
       return 1;
     }
 
-    int status = lunix_run(argv[0], client_fd, lunix_next_pid++, ppid, argc, argv);
+    int status = lunix_run(argv[0], client_fd, lunix_next_pid++, ppid, sp, argc, argv);
     _exit(status);
   }
 

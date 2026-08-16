@@ -11,10 +11,13 @@ typedef struct {
   pid_t host_pid;
   int client_fd;
 
+  int argc;
+  char **argv;
   int pid;
   int ppid;
   int uid;
   int gid;
+  int sp;
   bool exited;
   int exit_status;
 } lunix_process_t;
@@ -45,4 +48,4 @@ typedef struct {
 extern lunix_process_manager_t *lunix_process_manager;
 
 extern int lunix_process_manager_start_server();
-extern int lunix_process_manager_create(int ppid, int argc, char **argv);
+extern int lunix_process_manager_create(int ppid, uint64_t sp, int argc, char **argv);

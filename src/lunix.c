@@ -574,6 +574,16 @@ static long lunix_sys_brk(uc_engine *uc, lunix_process_t *process, uint64_t addr
   return heap_end;
 }
 
+// 220
+static long lunix_sys_clone(uc_engine *uc, lunix_process_t *process, uint64_t flags, uint64_t newsp, int ptid, int ctid, uint64_t tls) {
+  uc=uc;flags=flags;ptid=ptid;ctid=ctid;tls=tls;
+  if (newsp == 0) {
+    newsp = process->sp;
+  }
+  lunix_process_manager_create(process->pid, newsp, process->argc, process->argv);
+  return 0;
+}
+
 // 222
 static long lunix_sys_mmap(uc_engine *uc, lunix_process_t *process, uint64_t addr, uint64_t len, int prot, int flags, int fd, off_t offset) {
   process=process;flags=flags;fd=fd;offset=offset;
@@ -796,14 +806,17 @@ long lunix_syscall(uc_engine *uc, lunix_process_t *process) {
       lunix_debug("[lunix] r5: %lu\n", r5);
       return lunix_sys_mmap(uc, process, r0, r1, (int)r2, (int)r3, (int)r4, (off_t)r5);
 
-    case 261:
-      return lunix_sys_prlimit64(uc, process, r0, r1, r2, r3);
-    
+    case 220:
+      return lunix_sys_clone(uc, process, r0, r1, (int)r2, (int)r3, r4);
+
     case 226:
       return lunix_sys_mprotect(uc, process, r0, r1, r2);
     
     case 233:
       return lunix_sys_madvise(uc, process, r0, r1, (int)r2);
+
+    case 261:
+      return lunix_sys_prlimit64(uc, process, r0, r1, r2, r3);  
 
     case 278:
       return lunix_sys_getrandom(uc, process, r0, r1, (unsigned int)r2);

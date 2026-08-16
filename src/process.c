@@ -9,6 +9,8 @@
 
 lunix_process_manager_t *lunix_process_manager;
 
+int lunix_next_pid = 1;
+
 int lunix_process_manager_start_server() {
   lunix_process_manager = calloc(1, sizeof(*lunix_process_manager));
   if (!lunix_process_manager) {
@@ -45,14 +47,29 @@ int lunix_process_manager_start_server() {
   return 0;
 };
 
-int lunix_process_manager_create(int argc, char **argv) {
+int lunix_process_manager_create(int ppid, int argc, char **argv) {
   pid_t pid = fork();
   if (pid == -1) {
     perror("[lunix] failed to fork");
     return -1;
   }
   if (pid == 0) {
-    int status = lunix_run(argv[0], argc, argv);
+    int client_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (client_fd == -1) {
+      perror("[lunix] failed to create socket");
+      return 1;
+    }
+
+    struct sockaddr_un addr = {0};
+    addr.sun_family = AF_UNIX;
+    strcpy(addr.sun_path, LUNIX_SOCKET_PATH);
+    if (connect(client_fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+      perror("[lunix] failed to connect");
+      close(client_fd);
+      return 1;
+    }
+
+    int status = lunix_run(argv[0], client_fd, lunix_next_pid++, ppid, argc, argv);
     _exit(status);
   }
 

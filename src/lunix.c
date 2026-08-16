@@ -526,39 +526,39 @@ static long lunix_sys_uname(uc_engine *uc, lunix_process_t *process, uint64_t ad
 }
 
 // 172
-static long lunix_sys_getpid(uc_engine *uc) {
-  uc = uc;
-  return getpid();
+static long lunix_sys_getpid(uc_engine *uc, lunix_process_t *process) {
+  uc=uc;
+  return process->pid;
 }
 
 // 173
-static long lunix_sys_getppid(uc_engine *uc) {
-  uc = uc;
-  return getppid();
+static long lunix_sys_getppid(uc_engine *uc, lunix_process_t *process) {
+  uc=uc;
+  return process->ppid;
 }
 
 // 174
-static long lunix_sys_getuid(uc_engine *uc) {
+static long lunix_sys_getuid(uc_engine *uc, lunix_process_t *process) {
   uc=uc;
-  return getuid();
+  return process->uid;
 }
 
 // 175
-static long lunix_sys_geteuid(uc_engine *uc) {
+static long lunix_sys_geteuid(uc_engine *uc, lunix_process_t *process) {
   uc=uc;
-  return getuid();
+  return process->uid;
 }
 
 // 176
-static long lunix_sys_getgid(uc_engine *uc) {
+static long lunix_sys_getgid(uc_engine *uc, lunix_process_t *process) {
   uc=uc;
-  return getgid();
+  return process->gid;
 }
 
 // 177
-static long lunix_sys_getegid(uc_engine *uc) {
+static long lunix_sys_getegid(uc_engine *uc, lunix_process_t *process) {
   uc=uc;
-  return getgid();
+  return process->gid;
 }
 
 // 214
@@ -767,22 +767,22 @@ long lunix_syscall(uc_engine *uc, lunix_process_t *process) {
       return lunix_sys_uname(uc, process, r0);    
 
     case 172:
-      return lunix_sys_getpid(uc);
+      return lunix_sys_getpid(uc, process);
     
     case 173:
-      return lunix_sys_getppid(uc);
+      return lunix_sys_getppid(uc, process);
 
     case 174:
-      return lunix_sys_getuid(uc);
+      return lunix_sys_getuid(uc, process);
 
     case 175:
-      return lunix_sys_geteuid(uc);
+      return lunix_sys_geteuid(uc, process);
 
     case 176:
-      return lunix_sys_getgid(uc);
+      return lunix_sys_getgid(uc, process);
 
     case 177:
-      return lunix_sys_getegid(uc);
+      return lunix_sys_getegid(uc, process);
 
     case 214:
       return lunix_sys_brk(uc, process, r0);

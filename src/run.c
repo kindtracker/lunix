@@ -102,7 +102,7 @@ int lunix_load_elf(const char *path, uc_engine *uc, uint64_t *entry) {
   return 0;
 }
 
-int lunix_setup_stack(uc_engine *uc, int stack_top, int stack_size, int argc, char **argv) {
+int lunix_setup_stack(uc_engine *uc, int stack_top, int stack_size, uint64_t *stack_addr, int argc, char **argv) {
   uc_err err = uc_mem_map(uc, stack_top - stack_size, stack_size,UC_PROT_READ | UC_PROT_WRITE);
   if (err != UC_ERR_OK) {
     fprintf(stderr, "[lunix] failed to map stack: %s\n", uc_strerror(err));
@@ -169,6 +169,7 @@ int lunix_setup_stack(uc_engine *uc, int stack_top, int stack_size, int argc, ch
     return -1;
   }
 
+  *stack_addr = sp;
   err = uc_reg_write(uc, UC_ARM64_REG_SP, &sp);
   if (err != UC_ERR_OK) {
     return -1;
@@ -194,7 +195,7 @@ void lunix_hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user_
   }
 }
 
-int lunix_run(const char *path, int argc, char **argv) {
+int lunix_run(const char *path, int client_fd, int pid, int ppid, int argc, char **argv) {
   lunix_process_t *process = calloc(1, sizeof(lunix_process_t));
   if (!process) {
     perror("[lunix] failed to allocate process");
@@ -220,7 +221,8 @@ int lunix_run(const char *path, int argc, char **argv) {
     return 1;
   }
 
-  if (lunix_setup_stack(uc, LUNIX_STACK_TOP, LUNIX_STACK_SIZE, argc, argv) != 0) {
+  uint64_t stack_addr;
+  if (lunix_setup_stack(uc, LUNIX_STACK_TOP, LUNIX_STACK_SIZE, &stack_addr, argc, argv) != 0) {
     fprintf(stderr, "[lunix] failed to setup stack\n");
     return 1;
   }
@@ -228,6 +230,16 @@ int lunix_run(const char *path, int argc, char **argv) {
 
   uc_hook hook;
   uc_hook_add(uc, &hook, UC_HOOK_CODE, (void *)lunix_hook_code, process, 1, 0);
+
+  process->used = true;
+  process->host_pid = getpid();
+  process->client_fd = client_fd;
+  process->pid = pid;
+  process->ppid = ppid;
+  process->uid = LUNIX_DEFAULT_UID;
+  process->gid = LUNIX_DEFAULT_GID;
+  process->exited = false;
+  process->exit_status = 0;
 
   err = uc_emu_start(uc, entry, 0, 0, 0);
   if (err != UC_ERR_OK) {

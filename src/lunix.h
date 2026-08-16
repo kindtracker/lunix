@@ -15,7 +15,7 @@
 #define LUNIX_SOCKET_PATH "/tmp/lunix.sock"
 
 #define LUNIX_ENABLE_LOG
-// #define LUNIX_ENABLE_DEBUG
+#define LUNIX_ENABLE_DEBUG
 
 #ifdef LUNIX_ENABLE_LOG
 #define lunix_log printf

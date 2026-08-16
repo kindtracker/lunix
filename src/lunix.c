@@ -580,8 +580,7 @@ static long lunix_sys_clone(uc_engine *uc, lunix_process_t *process, uint64_t fl
   if (newsp == 0) {
     newsp = process->sp;
   }
-  lunix_process_manager_create(process->pid, newsp, process->argc, process->argv);
-  return 0;
+  return lunix_process_manager_create(process->uc, process->pid, newsp, process->argc, process->argv);
 }
 
 // 222

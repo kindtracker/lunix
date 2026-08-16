@@ -47,12 +47,14 @@ int lunix_process_manager_start_server() {
   return 0;
 };
 
-int lunix_process_manager_create(int ppid, uint64_t sp, int argc, char **argv) {
+int lunix_process_manager_create(uc_engine *puc, int ppid, uint64_t sp, int argc, char **argv) {
   pid_t pid = fork();
   if (pid == -1) {
     perror("[lunix] failed to fork");
     return -1;
   }
+
+  int guest_pid = lunix_next_pid++;
   if (pid == 0) {
     int client_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (client_fd == -1) {
@@ -69,15 +71,11 @@ int lunix_process_manager_create(int ppid, uint64_t sp, int argc, char **argv) {
       return 1;
     }
 
-    int status = lunix_run(argv[0], client_fd, lunix_next_pid++, ppid, sp, argc, argv);
+    lunix_process_t *process = NULL;
+    int status = lunix_run(argv[0], client_fd, guest_pid, puc, ppid, sp, argc, argv, &process);
+    lunix_log("[lunix] process %d exited with status %d\n", process->pid, status);
     _exit(status);
   }
 
-  int status;
-  waitpid(pid, &status, 0);
-  if (WIFEXITED(status)) {
-    lunix_log("[lunix] exit status: %d\n", WEXITSTATUS(status));
-  }
-
-  return status;
+  return guest_pid;
 }

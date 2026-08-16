@@ -7,7 +7,7 @@
 #define LUNIX_MAX_PROCESSES 64
 
 typedef struct {
-  int used;
+  uc_engine *uc;
   pid_t host_pid;
   int client_fd;
 
@@ -48,4 +48,4 @@ typedef struct {
 extern lunix_process_manager_t *lunix_process_manager;
 
 extern int lunix_process_manager_start_server();
-extern int lunix_process_manager_create(int ppid, uint64_t sp, int argc, char **argv);
+extern int lunix_process_manager_create(uc_engine *puc, int ppid, uint64_t sp, int argc, char **argv);

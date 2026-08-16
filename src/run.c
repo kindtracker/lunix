@@ -195,12 +195,13 @@ void lunix_hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user_
   }
 }
 
-int lunix_run(const char *path, int client_fd, int pid, int ppid, uint64_t sp, int argc, char **argv) {
+int lunix_run(const char *path, int client_fd, int pid, uc_engine *puc, int ppid, uint64_t sp, int argc, char **argv, lunix_process_t **oprocess) {
   lunix_process_t *process = calloc(1, sizeof(lunix_process_t));
   if (!process) {
     perror("[lunix] failed to allocate process");
     return 1;
   }
+  *oprocess = process;
 
   uc_engine *uc;
   uc_err err = uc_open(UC_ARCH_ARM64, UC_MODE_ARM, &uc);
@@ -209,35 +210,85 @@ int lunix_run(const char *path, int client_fd, int pid, int ppid, uint64_t sp, i
     return 1;
   }
 
-  uint64_t entry;
-  if (lunix_load_elf(path, uc, &entry) != 0) {
-    fprintf(stderr, "[lunix] failed to load program\n");
-    return 1;
+  uint64_t entry = 0;
+  if (!puc) {
+    if (lunix_load_elf(path, uc, &entry) != 0) {
+      fprintf(stderr, "[lunix] failed to load program\n");
+      return 1;
+    }
+
+    err = uc_mem_map(uc, LUNIX_HEAP_BASE, LUNIX_HEAP_SIZE, UC_PROT_READ | UC_PROT_WRITE);
+    if (err != UC_ERR_OK) {
+      fprintf(stderr, "[lunix] failed to map heap: %s\n", uc_strerror(err));
+      return 1;
+    }
   }
 
-  err = uc_mem_map(uc, LUNIX_HEAP_BASE, LUNIX_HEAP_SIZE, UC_PROT_READ | UC_PROT_WRITE);
-  if (err != UC_ERR_OK) {
-    fprintf(stderr, "[lunix] failed to map heap: %s\n", uc_strerror(err));
-    return 1;
+  if (puc) {
+    uc_mem_region *regions;
+    uint32_t count;
+
+    err = uc_mem_regions(puc, &regions, &count);
+    if (err != UC_ERR_OK) {
+      fprintf(stderr, "[lunix] failed to get memory regions: %s\n", uc_strerror(err));
+      return -1;
+    }
+
+    for (uint32_t i = 0; i < count; i++) {
+      uint64_t start = regions[i].begin;
+      uint64_t size = regions[i].end - start + 1;
+      uint8_t *buf = malloc(size);
+      if (!buf) {
+        uc_free(regions);
+        return -1;
+      }
+
+      err = uc_mem_map(uc, start, size, regions[i].perms);
+      if (err != UC_ERR_OK) {
+        fprintf(stderr, "[lunix] failed to map memory: %s\n", uc_strerror(err));
+        free(buf);
+        uc_free(regions);
+        return -1;
+      }
+      err = uc_mem_read(puc, start, buf, size);
+      if (err == UC_ERR_OK) {
+        err = uc_mem_write(uc, start, buf, size);
+      }
+
+      free(buf);
+      if (err != UC_ERR_OK) {
+        fprintf(stderr, "[lunix] failed to copy memory: %s\n", uc_strerror(err));
+        uc_free(regions);
+        return -1;
+      }
+    }
+    uc_free(regions);
+
+    err = uc_reg_read(puc, UC_ARM64_REG_PC, &entry);
+    if (err != UC_ERR_OK) {
+      fprintf(stderr, "[lunix] failed to get parent pc: %s\n", uc_strerror(err));
+      return -1;
+    }
+    uint64_t regs[31];
+    for (int i = 0; i < 31; i++) {
+      uc_reg_read(puc, UC_ARM64_REG_X0 + i, &regs[i]);
+    }
+    for (int i = 0; i < 31; i++) {
+      uc_reg_write(uc, UC_ARM64_REG_X0 + i, &regs[i]);
+    }
+
+    uint64_t zero = 0;
+    uc_reg_write(uc, UC_ARM64_REG_X0, &zero);
   }
 
   uint64_t stack_addr;
-  
   uint64_t real_sp = sp == 1 ? LUNIX_STACK_TOP : sp;
-  if (sp == 1) {
+  if (!puc) {
     if (lunix_setup_stack(uc, real_sp, LUNIX_STACK_SIZE, &stack_addr, argc, argv) != 0) {
       fprintf(stderr, "[lunix] failed to setup stack\n");
       return 1;
     }
   } else {
-    uint64_t stack_start = (real_sp - LUNIX_STACK_SIZE) & ~0xfffULL;
-    uint64_t stack_end = (real_sp + 0xfff) & ~0xfffULL;
-    uint64_t stack_size = stack_end - stack_start;
-    err = uc_mem_map(uc, stack_start, stack_size, UC_PROT_READ | UC_PROT_WRITE);
-    if (err != UC_ERR_OK) {
-      fprintf(stderr, "[lunix] failed to map stack: %s\n", uc_strerror(err));
-      return -1;
-    }
     uc_reg_write(uc, UC_ARM64_REG_SP, &real_sp);
   }
 
@@ -246,7 +297,7 @@ int lunix_run(const char *path, int client_fd, int pid, int ppid, uint64_t sp, i
   uc_hook hook;
   uc_hook_add(uc, &hook, UC_HOOK_CODE, (void *)lunix_hook_code, process, 1, 0);
 
-  process->used = true;
+  process->uc = uc;
   process->host_pid = getpid();
   process->client_fd = client_fd;
   process->argc = argc;

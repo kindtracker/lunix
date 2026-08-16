@@ -20,7 +20,7 @@ int main(int argc, char **argv) {
     return -1;
   }
 
-  lunix_process_manager_create(0, 1, argc-1, argv+1);
+  lunix_process_manager_create(NULL, 0, 1, argc-1, argv+1);
 
   return 0;
 }

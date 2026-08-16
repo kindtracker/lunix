@@ -103,7 +103,7 @@ int lunix_load_elf(const char *path, uc_engine *uc, uint64_t *entry) {
 }
 
 int lunix_setup_stack(uc_engine *uc, uint64_t stack_top, uint64_t stack_size, uint64_t *stack_addr, int argc, char **argv) {
-  uc_err err = uc_mem_map(uc, stack_top - stack_size, stack_size,UC_PROT_READ | UC_PROT_WRITE);
+  uc_err err = uc_mem_map(uc, stack_top - stack_size, stack_size, UC_PROT_READ | UC_PROT_WRITE);
   if (err != UC_ERR_OK) {
     fprintf(stderr, "[lunix] failed to map stack: %s\n", uc_strerror(err));
     return -1;
@@ -230,6 +230,14 @@ int lunix_run(const char *path, int client_fd, int pid, int ppid, uint64_t sp, i
       return 1;
     }
   } else {
+    uint64_t stack_start = (real_sp - LUNIX_STACK_SIZE) & ~0xfffULL;
+    uint64_t stack_end = (real_sp + 0xfff) & ~0xfffULL;
+    uint64_t stack_size = stack_end - stack_start;
+    err = uc_mem_map(uc, stack_start, stack_size, UC_PROT_READ | UC_PROT_WRITE);
+    if (err != UC_ERR_OK) {
+      fprintf(stderr, "[lunix] failed to map stack: %s\n", uc_strerror(err));
+      return -1;
+    }
     uc_reg_write(uc, UC_ARM64_REG_SP, &real_sp);
   }
 

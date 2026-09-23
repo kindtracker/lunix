@@ -1,7 +1,7 @@
+#include <elf.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <elf.h>
 
 #include <unicorn/unicorn.h>
 
@@ -9,8 +9,10 @@
 
 extern int load_elf(const char *path, uc_engine *uc, uint64_t *entry);
 
-static int setup_stack(uc_engine *uc, int stack_top, int stack_size, int argc, const char **argv) {
-  uc_err err = uc_mem_map(uc, stack_top - stack_size, stack_size,UC_PROT_READ | UC_PROT_WRITE);
+static int setup_stack(uc_engine *uc, int stack_top, int stack_size, int argc,
+                       const char **argv) {
+  uc_err err = uc_mem_map(uc, stack_top - stack_size, stack_size,
+                          UC_PROT_READ | UC_PROT_WRITE);
   if (err != UC_ERR_OK) {
     fprintf(stderr, "[lunix] failed to map stack: %s\n", uc_strerror(err));
     return -1;
@@ -84,8 +86,10 @@ static int setup_stack(uc_engine *uc, int stack_top, int stack_size, int argc, c
   return 0;
 }
 
-static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user_data) {
-  size=size; user_data=user_data;
+static void hook_code(uc_engine *uc, uint64_t address, uint32_t size,
+                      void *user_data) {
+  size = size;
+  user_data = user_data;
   uint32_t insn;
 
   uc_mem_read(uc, address, &insn, sizeof(insn));
@@ -93,7 +97,7 @@ static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user
   // lunix_debug("insn: %x xor: %x\n", insn, insn & 0xffe0001f);
   if ((insn & 0xffe0001f) == 0xd4000001) {
     lunix_debug("[lunix] syscall\n");
-    
+
     uint64_t result = lunix_syscall(uc);
     uc_reg_write(uc, UC_ARM64_REG_X0, &result);
 
@@ -126,13 +130,14 @@ int main(int argc, const char **argv) {
     return 1;
   }
 
-  err = uc_mem_map(uc, LUNIX_HEAP_BASE, LUNIX_HEAP_SIZE, UC_PROT_READ | UC_PROT_WRITE);
+  err = uc_mem_map(uc, LUNIX_HEAP_BASE, LUNIX_HEAP_SIZE,
+                   UC_PROT_READ | UC_PROT_WRITE);
   if (err != UC_ERR_OK) {
     fprintf(stderr, "[lunix] failed to map heap: %s\n", uc_strerror(err));
     return 1;
   }
 
-  if (setup_stack(uc, 0x80000000, 0x10000, argc-1, argv+1) != 0) {
+  if (setup_stack(uc, 0x80000000, 0x10000, argc - 1, argv + 1) != 0) {
     fprintf(stderr, "[lunix] failed to setup stack\n");
     return 1;
   }

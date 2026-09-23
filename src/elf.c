@@ -1,7 +1,7 @@
+#include <elf.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <elf.h>
 
 #include <unicorn/unicorn.h>
 
@@ -29,7 +29,7 @@ static file_t read_file(const char *path) {
   }
 
   fclose(f);
-  return (file_t){ .data = data, .size = size };
+  return (file_t){.data = data, .size = size};
 }
 
 int load_elf(const char *path, uc_engine *uc, uint64_t *entry) {
@@ -40,7 +40,8 @@ int load_elf(const char *path, uc_engine *uc, uint64_t *entry) {
   }
 
   Elf64_Ehdr *eh = (Elf64_Ehdr *)file.data;
-  if (memcmp(eh->e_ident, ELFMAG, SELFMAG) != 0 || eh->e_machine != EM_AARCH64) {
+  if (memcmp(eh->e_ident, ELFMAG, SELFMAG) != 0 ||
+      eh->e_machine != EM_AARCH64) {
     free(file.data);
     return -1;
   }
@@ -51,28 +52,35 @@ int load_elf(const char *path, uc_engine *uc, uint64_t *entry) {
   uint64_t max_addr = 0;
   for (int i = 0; i < eh->e_phnum; i++) {
     Elf64_Phdr *ph = &phdrs[i];
-    if (ph->p_type != PT_LOAD) continue;
+    if (ph->p_type != PT_LOAD)
+      continue;
 
     uint64_t addr = ph->p_vaddr & ~0xfffULL;
     uint64_t end = (ph->p_vaddr + ph->p_memsz + 0xfff) & ~0xfffULL;
-    if (min_addr > addr) min_addr = addr;
-    if (max_addr < end) max_addr = end;
+    if (min_addr > addr)
+      min_addr = addr;
+    if (max_addr < end)
+      max_addr = end;
   }
 
   uc_err err = uc_mem_map(uc, min_addr, max_addr - min_addr, UC_PROT_ALL);
   if (err != UC_ERR_OK) {
-    fprintf(stderr, "[lunix] failed to map elf segment: %s\n", uc_strerror(err));
+    fprintf(stderr, "[lunix] failed to map elf segment: %s\n",
+            uc_strerror(err));
     free(file.data);
     return -1;
   }
 
   for (int i = 0; i < eh->e_phnum; i++) {
     Elf64_Phdr *ph = &phdrs[i];
-    if (ph->p_type != PT_LOAD) continue;
-    
-    uc_err err = uc_mem_write(uc, ph->p_vaddr, file.data + ph->p_offset, ph->p_filesz);
+    if (ph->p_type != PT_LOAD)
+      continue;
+
+    uc_err err =
+        uc_mem_write(uc, ph->p_vaddr, file.data + ph->p_offset, ph->p_filesz);
     if (err != UC_ERR_OK) {
-      fprintf(stderr, "[lunix] failed to write elf segment: %s\n", uc_strerror(err));
+      fprintf(stderr, "[lunix] failed to write elf segment: %s\n",
+              uc_strerror(err));
       free(file.data);
       return -1;
     }
@@ -84,11 +92,13 @@ int load_elf(const char *path, uc_engine *uc, uint64_t *entry) {
         return -1;
       }
 
-      err = uc_mem_write(uc, ph->p_vaddr + ph->p_filesz, zero, ph->p_memsz - ph->p_filesz);
+      err = uc_mem_write(uc, ph->p_vaddr + ph->p_filesz, zero,
+                         ph->p_memsz - ph->p_filesz);
       free(zero);
 
       if (err != UC_ERR_OK) {
-        fprintf(stderr, "[lunix] failed to clear elf bss: %s\n", uc_strerror(err));
+        fprintf(stderr, "[lunix] failed to clear elf bss: %s\n",
+                uc_strerror(err));
         free(file.data);
         return -1;
       }

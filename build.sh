@@ -2,10 +2,11 @@
 set -e
 
 CC="cc"
+CC2="aarch64-linux-gnu-gcc"
 CFlags="-O0"
 LDFlags=""
 Libraries="-lunicorn"
-OUT="build/lunix"
+Out="build/lunix"
 
 Jobs="$(nproc)"
 
@@ -15,22 +16,37 @@ mkdir -p build/compile/lunix
 
 CompileLunix() {
   File=$1
-  Object="build/compile/lunix/$(echo $File | sed 's#/#_#g; s#\.c$#.o#')"
+  Object="build/compile/lunix/$(echo "$File" | sed 's#^examples/##; s#/#_#g; s#\.c$##')"
 
   echo "  CC  $File"
   $CC $CFlags -c "$File" \
-    -Ivendors/lua \
     -o $Object
 }
 
+CompileExample() {
+  File=$1
+  Out="examples/$(echo "$File" | sed 's#^examples/##; s#/#_#g; s#\.c$##')"
+
+  echo "  CC  $File"
+  $CC2 -c "$File" \
+    -o $Out
+}
+
 export -f CompileLunix
+export -f CompileExample
 export CFlags
 export CC
+export CC2
 
-find src -name "*.c" |
-  xargs -P "$Jobs" -n 1 bash -c 'CompileLunix "$1"' _
+if [ "${1:-}" = "examples" ]; then
+  find examples -name "*.c" |
+    xargs -P "$Jobs" -n 1 bash -c 'CompileExample "$1"' _
+else
+  find src -name "*.c" |
+    xargs -P "$Jobs" -n 1 bash -c 'CompileLunix "$1"' _
 
-echo "  LD  $OUT"
-$CC $CFlags $LDFlags $Libraries \
-  build/compile/*/*.o \
-  -o $OUT
+  echo "  LD  $Out"
+  $CC $CFlags $LDFlags $Libraries \
+    build/compile/*/* \
+    -o $Out
+fi

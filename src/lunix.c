@@ -133,6 +133,57 @@ static long lunix_sys_getcwd(uc_engine *uc, uint64_t buf_addr, uint64_t size) {
   return buf_addr;
 }
 
+// 25
+static long lunix_sys_fcntl(uc_engine *uc, unsigned int fd, unsigned int cmd,
+                            unsigned long arg) {
+  struct flock flock;
+  int result;
+  uc_err err;
+
+  switch (cmd) {
+  case F_DUPFD:
+  case F_DUPFD_CLOEXEC:
+  case F_SETFD:
+  case F_SETFL:
+    result = fcntl(fd, cmd, (int)arg);
+    break;
+
+  case F_GETFD:
+  case F_GETFL:
+    result = fcntl(fd, cmd);
+    break;
+
+  case F_GETLK:
+  case F_SETLK:
+  case F_SETLKW:
+    err = uc_mem_read(uc, arg, &flock, sizeof(flock));
+    if (err != UC_ERR_OK) {
+      return -EFAULT;
+    }
+
+    result = fcntl(fd, cmd, &flock);
+
+    if (result == -1) {
+      return -errno;
+    }
+
+    err = uc_mem_write(uc, arg, &flock, sizeof(flock));
+    if (err != UC_ERR_OK) {
+      return -EFAULT;
+    }
+
+    return result;
+
+  default:
+    return -ENOSYS;
+  }
+
+  if (result == -1)
+    return -errno;
+
+  return result;
+}
+
 // 29
 static long lunix_sys_ioctl(uc_engine *uc, uint64_t fd, uint64_t cmd,
                             uint64_t arg) {
@@ -228,6 +279,18 @@ static long lunix_sys_getdents64(uc_engine *uc, int fd, uint64_t dirp,
 
   free(buffer);
   return written;
+}
+
+// 62
+static long lunix_sys_lseek(uc_engine *uc, unsigned int fd, off_t offset,
+                            unsigned int whence) {
+  off_t result = lseek(fd, offset, whence);
+
+  if (result == (off_t)-1) {
+    return -errno;
+  }
+
+  return result;
 }
 
 // 63
@@ -693,6 +756,9 @@ long lunix_syscall(uc_engine *uc) {
   case 17:
     return lunix_sys_getcwd(uc, r0, r1);
 
+  case 25:
+    return lunix_sys_fcntl(uc, r0, r1, r2);
+
   case 29:
     return lunix_sys_ioctl(uc, r0, r1, r2);
 
@@ -704,6 +770,9 @@ long lunix_syscall(uc_engine *uc) {
 
   case 61:
     return lunix_sys_getdents64(uc, r0, r1, r2);
+
+  case 62:
+    return lunix_sys_read(uc, r0, r1, r2);
 
   case 63:
     return lunix_sys_read(uc, (int)r0, r1, r2);

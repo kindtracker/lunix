@@ -41,6 +41,10 @@ export CC2
 if [ "${1:-}" = "examples" ]; then
   find examples -name "*.c" |
     xargs -P "$Jobs" -n 1 bash -c 'CompileExample "$1"' _
+elif [ "${1:-}" = "all" ]; then
+  $0 &
+  $0 examples &
+  wait
 else
   find src -name "*.c" |
     xargs -P "$Jobs" -n 1 bash -c 'CompileLunix "$1"' _

@@ -641,8 +641,7 @@ static long LunixSyscallClone(uc_engine *Unicorn, uint64_t Flags,
                               LunixProcess *Process) {
   Flags = Flags;
 
-  LunixProcess *NewProcess =
-      LunixCreateProcess(Process, NULL, Process->Argc, Process->Argv);
+  LunixProcess *NewProcess = LunixCreateProcess(NULL, 0, NULL);
 }
 
 // 222

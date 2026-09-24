@@ -15,8 +15,8 @@ int main(int Argc, const char **Argv) {
   LunixLog("[Lunix] v0.1.0\n");
 
   const char *ProgramPath = Argv[1];
-  LunixProccess *Proccess = LunixCreateProccess(NULL, ProgramPath, Argc, Argv);
-  free(Proccess);
+  LunixProcess *Process = LunixCreateProcess(ProgramPath, Argc, Argv);
+  free(Process);
 
   return 0;
 }

@@ -27,8 +27,7 @@ typedef struct {
 
 int LunixLoadProgram(const char *ProgramPath, uc_engine *Unicorn,
                      uint64_t *Entry);
-long LunixSyscall(uc_engine *Unicorn);
+long LunixSyscall(LunixProcess *Process);
 
-LunixProcess *LunixCreateProcess(LunixProcess *Proccess,
-                                 const char *ProgramPath, int Argc,
+LunixProcess *LunixCreateProcess(const char *ProgramPath, int Argc,
                                  const char **Argv);

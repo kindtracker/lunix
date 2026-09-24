@@ -7,34 +7,35 @@
 
 typedef struct {
   unsigned char *Data;
-  size_t size;
-} Filet;
+  size_t Size;
+} FileType;
 
-static File ReadFile(const char *ProgramPath) {
-  File *FilePtr = fopen(ProgramPath, "rb");
+FileType ReadFile(const char *ProgramPath) {
+  FILE *FilePtr = fopen(ProgramPath, "rb");
   if (!FilePtr) {
     perror("fopen");
     exit(1);
   }
 
   fseek(FilePtr, 0, SEEK_END);
-  size_t size = ftell(FilePtr);
+  size_t Size = ftell(FilePtr);
   fseek(FilePtr, 0, SEEK_SET);
 
-  unsigned char *Data = malloc(size);
-  if (!Data || fread(data, 1, size, FilePtr) != size) {
+  unsigned char *Data = malloc(Size);
+  if (!Data || fread(Data, 1, Size, FilePtr) != Size) {
     perror("fread");
     fclose(FilePtr);
     exit(1);
   }
 
   fclose(FilePtr);
-  return (File){.Data = data, .size = size};
+  return (FileType){.Data = Data, .Size = Size};
 }
 
-int LoadProgram(const char *ProgramPath, uc_engine *Unicorn, uint64_t *Entry) {
-  Filet File = ReadFile(ProgramPath);
-  if (File.size < sizeof(Elf64_Ehdr)) {
+int LunixLoadProgram(const char *ProgramPath, uc_engine *Unicorn,
+                     uint64_t *Entry) {
+  FileType File = ReadFile(ProgramPath);
+  if (File.Size < sizeof(Elf64_Ehdr)) {
     free(File.Data);
     return -1;
   }

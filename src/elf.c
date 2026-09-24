@@ -6,47 +6,47 @@
 #include <unicorn/unicorn.h>
 
 typedef struct {
-  unsigned char *data;
+  unsigned char *Data;
   size_t size;
-} file_t;
+} Filet;
 
-static file_t read_file(const char *path) {
-  FILE *f = fopen(path, "rb");
-  if (!f) {
+static File ReadFile(const char *ProgramPath) {
+  File *FilePtr = fopen(ProgramPath, "rb");
+  if (!FilePtr) {
     perror("fopen");
     exit(1);
   }
 
-  fseek(f, 0, SEEK_END);
-  size_t size = ftell(f);
-  fseek(f, 0, SEEK_SET);
+  fseek(FilePtr, 0, SEEK_END);
+  size_t size = ftell(FilePtr);
+  fseek(FilePtr, 0, SEEK_SET);
 
-  unsigned char *data = malloc(size);
-  if (!data || fread(data, 1, size, f) != size) {
+  unsigned char *Data = malloc(size);
+  if (!Data || fread(data, 1, size, FilePtr) != size) {
     perror("fread");
-    fclose(f);
+    fclose(FilePtr);
     exit(1);
   }
 
-  fclose(f);
-  return (file_t){.data = data, .size = size};
+  fclose(FilePtr);
+  return (File){.Data = data, .size = size};
 }
 
-int load_elf(const char *path, uc_engine *uc, uint64_t *entry) {
-  file_t file = read_file(path);
-  if (file.size < sizeof(Elf64_Ehdr)) {
-    free(file.data);
+int LoadProgram(const char *ProgramPath, uc_engine *Unicorn, uint64_t *Entry) {
+  Filet File = ReadFile(ProgramPath);
+  if (File.size < sizeof(Elf64_Ehdr)) {
+    free(File.Data);
     return -1;
   }
 
-  Elf64_Ehdr *eh = (Elf64_Ehdr *)file.data;
+  Elf64_Ehdr *eh = (Elf64_Ehdr *)File.Data;
   if (memcmp(eh->e_ident, ELFMAG, SELFMAG) != 0 ||
       eh->e_machine != EM_AARCH64) {
-    free(file.data);
+    free(File.Data);
     return -1;
   }
 
-  Elf64_Phdr *phdrs = (Elf64_Phdr *)(file.data + eh->e_phoff);
+  Elf64_Phdr *phdrs = (Elf64_Phdr *)(File.Data + eh->e_phoff);
 
   uint64_t min_addr = UINT64_MAX;
   uint64_t max_addr = 0;
@@ -63,11 +63,12 @@ int load_elf(const char *path, uc_engine *uc, uint64_t *entry) {
       max_addr = end;
   }
 
-  uc_err err = uc_mem_map(uc, min_addr, max_addr - min_addr, UC_PROT_ALL);
-  if (err != UC_ERR_OK) {
-    fprintf(stderr, "[lunix] failed to map elf segment: %s\n",
-            uc_strerror(err));
-    free(file.data);
+  uc_err Error =
+      uc_mem_map(Unicorn, min_addr, max_addr - min_addr, UC_PROT_ALL);
+  if (Error != UC_ERR_OK) {
+    fprintf(stderr, "[Lunix] failed to map elf segment: %s\n",
+            uc_strerror(Error));
+    free(File.Data);
     return -1;
   }
 
@@ -76,36 +77,36 @@ int load_elf(const char *path, uc_engine *uc, uint64_t *entry) {
     if (ph->p_type != PT_LOAD)
       continue;
 
-    uc_err err =
-        uc_mem_write(uc, ph->p_vaddr, file.data + ph->p_offset, ph->p_filesz);
-    if (err != UC_ERR_OK) {
-      fprintf(stderr, "[lunix] failed to write elf segment: %s\n",
-              uc_strerror(err));
-      free(file.data);
+    Error = uc_mem_write(Unicorn, ph->p_vaddr, File.Data + ph->p_offset,
+                         ph->p_filesz);
+    if (Error != UC_ERR_OK) {
+      fprintf(stderr, "[Lunix] failed to write elf segment: %s\n",
+              uc_strerror(Error));
+      free(File.Data);
       return -1;
     }
 
     if (ph->p_memsz > ph->p_filesz) {
-      uint8_t *zero = calloc(1, ph->p_memsz - ph->p_filesz);
-      if (!zero) {
-        free(file.data);
+      uint8_t *Zero = calloc(1, ph->p_memsz - ph->p_filesz);
+      if (!Zero) {
+        free(File.Data);
         return -1;
       }
 
-      err = uc_mem_write(uc, ph->p_vaddr + ph->p_filesz, zero,
-                         ph->p_memsz - ph->p_filesz);
-      free(zero);
+      Error = uc_mem_write(Unicorn, ph->p_vaddr + ph->p_filesz, Zero,
+                           ph->p_memsz - ph->p_filesz);
+      free(Zero);
 
-      if (err != UC_ERR_OK) {
-        fprintf(stderr, "[lunix] failed to clear elf bss: %s\n",
-                uc_strerror(err));
-        free(file.data);
+      if (Error != UC_ERR_OK) {
+        fprintf(stderr, "[Lunix] failed to clear elf bss: %s\n",
+                uc_strerror(Error));
+        free(File.Data);
         return -1;
       }
     }
   }
 
-  *entry = eh->e_entry;
-  free(file.data);
+  *Entry = eh->e_entry;
+  free(File.Data);
   return 0;
 }

@@ -529,6 +529,18 @@ static long LunixSyscallRt_sigaction(uc_engine *Unicorn, int32_t sig,
   return 0;
 }
 
+// 135
+static long LunixSyscallRt_sigprocmask(uc_engine *Unicorn, int32_t how,
+                                       uint64_t set, uint64_t oset,
+                                       uint64_t sigsetsize) {
+  Unicorn = Unicorn;
+  how = how;
+  set = set;
+  oset = oset;
+  sigsetsize = sigsetsize;
+  return 0;
+}
+
 // 144
 static long LunixSyscallSetgid(uc_engine *Unicorn, uint64_t gid) {
   Unicorn = Unicorn;
@@ -620,6 +632,17 @@ static long LunixSyscallBrk(uc_engine *Unicorn, uint64_t addr) {
   }
   HeapEnd = addr;
   return HeapEnd;
+}
+
+// 220
+static long LunixSyscallClone(uc_engine *Unicorn, uint64_t Flags,
+                              uint64_t Stack, uint64_t ParentTid,
+                              uint64_t ChildTid, uint64_t Tls,
+                              LunixProcess *Process) {
+  Flags = Flags;
+
+  LunixProcess *NewProcess =
+      LunixCreateProcess(Process, NULL, Process->Argc, Process->Argv);
 }
 
 // 222
@@ -746,7 +769,8 @@ static long LunixSyscallRseq(uc_engine *Unicorn, uint64_t rseq,
   return 0;
 }
 
-long LunixSyscall(uc_engine *Unicorn) {
+long LunixSyscall(LunixProcess *Process) {
+  uc_engine *Unicorn = Process->UnicornVM;
   uint64_t SyscallNumber;
   uint64_t Reg0;
   uint64_t Reg1;
@@ -823,6 +847,9 @@ long LunixSyscall(uc_engine *Unicorn) {
   case 134:
     return LunixSyscallRt_sigaction(Unicorn, Reg0, Reg1, Reg2, Reg3);
 
+  case 135:
+    return LunixSyscallRt_sigprocmask(Unicorn, Reg0, Reg1, Reg2, Reg3);
+
   case 144:
     return LunixSyscallSetgid(Unicorn, Reg0);
 
@@ -859,7 +886,14 @@ long LunixSyscall(uc_engine *Unicorn) {
   case 214:
     return LunixSyscallBrk(Unicorn, Reg0);
 
-  case 222:
+  case 220: {
+    uint64_t Reg4;
+    uc_reg_read(Unicorn, UC_ARM64_REG_X4, &Reg4);
+    LunixDebug("[Lunix] Reg4: %lu\n", Reg4);
+    return LunixSyscallClone(Unicorn, Reg0, Reg1, Reg2, Reg3, Reg4, Process);
+  }
+
+  case 222: {
     uint64_t Reg4;
     uint64_t Reg5;
     uc_reg_read(Unicorn, UC_ARM64_REG_X4, &Reg4);
@@ -867,6 +901,7 @@ long LunixSyscall(uc_engine *Unicorn) {
     LunixDebug("[Lunix] Reg4: %lu\n", Reg4);
     LunixDebug("[Lunix] Reg5: %lu\n", Reg5);
     return LunixSyscallMmap(Unicorn, Reg0, Reg1, Reg2, Reg3, Reg4, Reg5);
+  }
 
   case 261:
     return LunixSyscallPrlimit64(Unicorn, Reg0, Reg1, Reg2, Reg3);

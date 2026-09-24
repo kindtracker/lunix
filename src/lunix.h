@@ -20,4 +20,15 @@
 #define LunixDebug(...) ((void)0)
 #endif
 
-extern long LunixSyscall(uc_engine *Unicorn);
+typedef struct {
+  uc_engine *UnicornVM;
+  int ProccessId;
+} LunixProcess;
+
+int LunixLoadProgram(const char *ProgramPath, uc_engine *Unicorn,
+                     uint64_t *Entry);
+long LunixSyscall(uc_engine *Unicorn);
+
+LunixProcess *LunixCreateProcess(LunixProcess *Proccess,
+                                 const char *ProgramPath, int Argc,
+                                 const char **Argv);

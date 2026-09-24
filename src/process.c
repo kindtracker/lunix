@@ -2,6 +2,10 @@
 
 #include "lunix.h"
 
+LunixProcess *LunixProcesses[64];
+int LunixActiveProcessCount = 0;
+int LunixProcessCount = 0;
+
 int SetupStack(uc_engine *Unicorn, int StackTop, int StackSize, int Argc,
                const char **Argv) {
   uc_err Error = uc_mem_map(Unicorn, StackTop - StackSize, StackSize,
@@ -138,5 +142,24 @@ LunixProcess *LunixCreateProcess(const char *ProgramPath, int Argc,
   uc_hook_add(Process->UnicornVM, &Hook, UC_HOOK_CODE, (void *)HookCode,
               Process, 1, 0);
 
+  LunixProcesses[LunixProcessCount] = Process;
+  LunixProcessCount++;
+
   return Process;
+}
+
+int LunixRemoveProcess(LunixProcess *Process) {
+  for (int i = 0; i < LunixProcessCount; i++) {
+    if (LunixProcesses[i] == Process) {
+      memmove(&LunixProcesses[i], &LunixProcesses[i + 1],
+              (LunixProcessCount - i - 1) * sizeof(LunixProcesses[0]));
+
+      LunixProcessCount--;
+      LunixProcesses[LunixProcessCount] = NULL;
+
+      return 0;
+    }
+  }
+
+  return -1;
 }

@@ -16,6 +16,13 @@ int main(int Argc, const char **Argv) {
 
   const char *ProgramPath = Argv[1];
   LunixProcess *Process = LunixCreateProcess(ProgramPath, Argc, Argv);
+
+  while (LunixAlive) {
+    if (LunixScheduler() != 0) {
+      break;
+    }
+  }
+
   free(Process);
 
   return 0;

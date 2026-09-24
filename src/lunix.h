@@ -25,9 +25,16 @@ typedef struct {
   int ProccessId;
 } LunixProcess;
 
+extern int LunixActiveProcessCount;
+extern int LunixProcessCount;
+extern LunixProcess *LunixProcesses[64];
+extern bool LunixAlive;
+
 int LunixLoadProgram(const char *ProgramPath, uc_engine *Unicorn,
                      uint64_t *Entry);
 long LunixSyscall(LunixProcess *Process);
 
 LunixProcess *LunixCreateProcess(const char *ProgramPath, int Argc,
                                  const char **Argv);
+int LunixRemoveProcess(LunixProcess *Process);
+int LunixScheduler();

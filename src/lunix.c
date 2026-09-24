@@ -471,18 +471,20 @@ static long LunixSyscallFstat(uc_engine *Unicorn, int32_t Fd,
 }
 
 // 93
-static long LunixSyscallExit(uc_engine *Unicorn, int32_t status) {
+static long LunixSyscallExit(uc_engine *Unicorn, LunixProcess *Process,
+                             int32_t Status) {
   Unicorn = Unicorn;
-  status = status;
-  LunixLog("[lunix] exit: %d\n", status);
-  uc_emu_stop(Unicorn);
+  Status = Status;
+  LunixLog("[lunix] exit: %d\n", Status);
+  LunixRemoveProcess(Process);
   return 0;
 }
 
 // 93
-static long LunixSyscallExit_group(uc_engine *Unicorn, int32_t status) {
-  status = status;
-  uc_emu_stop(Unicorn);
+static long LunixSyscallExit_group(uc_engine *Unicorn, LunixProcess *Process,
+                                   int32_t Status) {
+  Status = Status;
+  LunixRemoveProcess(Process);
   return 0;
 }
 
@@ -829,10 +831,10 @@ long LunixSyscall(LunixProcess *Process) {
     return LunixSyscallFstat(Unicorn, Reg0, Reg1);
 
   case 93:
-    return LunixSyscallExit(Unicorn, Reg0);
+    return LunixSyscallExit(Unicorn, Process, Reg0);
 
   case 94:
-    return LunixSyscallExit_group(Unicorn, Reg0);
+    return LunixSyscallExit_group(Unicorn, Process, Reg0);
 
   case 96:
     return LunixSyscallSet_tid_addr(Unicorn, Reg0);

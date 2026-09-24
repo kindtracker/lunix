@@ -7,14 +7,14 @@
 
 #include "lunix.h"
 
-extern int load_elf(const char *path, uc_engine *uc, uint64_t *entry);
+extern int load_elf(const char *path, uc_engine *Unicorn, uint64_t *Entry);
 
-static int setup_stack(uc_engine *uc, int stack_top, int stack_size, int argc,
-                       const char **argv) {
-  uc_err err = uc_mem_map(uc, stack_top - stack_size, stack_size,
-                          UC_PROT_READ | UC_PROT_WRITE);
-  if (err != UC_ERR_OK) {
-    fprintf(stderr, "[lunix] failed to map stack: %s\n", uc_strerror(err));
+static int setup_stack(uc_engine *Unicorn, int stack_top, int stack_size,
+                       int argc, const char **argv) {
+  uc_err Error = uc_mem_map(Unicorn, stack_top - stack_size, stack_size,
+                            UC_PROT_READ | UC_PROT_WRITE);
+  if (Error != UC_ERR_OK) {
+    fprintf(stderr, "[Lunix] failed to map stack: %s\n", uc_strerror(Error));
     return -1;
   }
 
@@ -29,8 +29,8 @@ static int setup_stack(uc_engine *uc, int stack_top, int stack_size, int argc,
   for (int i = argc - 1; i >= 0; i--) {
     size_t len = strlen(argv[i]) + 1;
     sp -= len;
-    err = uc_mem_write(uc, sp, argv[i], len);
-    if (err != UC_ERR_OK) {
+    Error = uc_mem_write(Unicorn, sp, argv[i], len);
+    if (Error != UC_ERR_OK) {
       free(arg_addrs);
       return -1;
     }
@@ -43,16 +43,16 @@ static int setup_stack(uc_engine *uc, int stack_top, int stack_size, int argc,
 
   sp -= 8;
 
-  err = uc_mem_write(uc, sp, &zero, 8);
-  if (err != UC_ERR_OK) {
+  Error = uc_mem_write(Unicorn, sp, &zero, 8);
+  if (Error != UC_ERR_OK) {
     free(arg_addrs);
     return -1;
   }
 
   sp -= 8;
 
-  err = uc_mem_write(uc, sp, &zero, 8);
-  if (err != UC_ERR_OK) {
+  Error = uc_mem_write(Unicorn, sp, &zero, 8);
+  if (Error != UC_ERR_OK) {
     free(arg_addrs);
     return -1;
   }
@@ -60,8 +60,8 @@ static int setup_stack(uc_engine *uc, int stack_top, int stack_size, int argc,
   for (int i = argc - 1; i >= 0; i--) {
     sp -= 8;
 
-    err = uc_mem_write(uc, sp, &arg_addrs[i], 8);
-    if (err != UC_ERR_OK) {
+    Error = uc_mem_write(Unicorn, sp, &arg_addrs[i], 8);
+    if (Error != UC_ERR_OK) {
       free(arg_addrs);
       return -1;
     }
@@ -73,36 +73,36 @@ static int setup_stack(uc_engine *uc, int stack_top, int stack_size, int argc,
 
   uint64_t guest_argc = argc;
 
-  err = uc_mem_write(uc, sp, &guest_argc, 8);
-  if (err != UC_ERR_OK) {
+  Error = uc_mem_write(Unicorn, sp, &guest_argc, 8);
+  if (Error != UC_ERR_OK) {
     return -1;
   }
 
-  err = uc_reg_write(uc, UC_ARM64_REG_SP, &sp);
-  if (err != UC_ERR_OK) {
+  Error = uc_reg_write(Unicorn, UC_ARM64_REG_SP, &sp);
+  if (Error != UC_ERR_OK) {
     return -1;
   }
 
   return 0;
 }
 
-static void hook_code(uc_engine *uc, uint64_t address, uint32_t size,
-                      void *user_data) {
+static void HookCode(uc_engine *Unicorn, uint64_t address, uint32_t size,
+                     void *user_data) {
   size = size;
   user_data = user_data;
   uint32_t insn;
 
-  uc_mem_read(uc, address, &insn, sizeof(insn));
+  uc_mem_read(Unicorn, address, &insn, sizeof(insn));
 
-  // lunix_debug("insn: %x xor: %x\n", insn, insn & 0xffe0001f);
+  // LunixDebug("insn: %x xor: %x\n", insn, insn & 0xffe0001f);
   if ((insn & 0xffe0001f) == 0xd4000001) {
-    lunix_debug("[lunix] syscall\n");
+    LunixDebug("[Lunix] syscall\n");
 
-    uint64_t result = lunix_syscall(uc);
-    uc_reg_write(uc, UC_ARM64_REG_X0, &result);
+    uint64_t result = LunixSyscall(Unicorn);
+    uc_reg_write(Unicorn, UC_ARM64_REG_X0, &result);
 
     uint64_t pc = address + 4;
-    uc_reg_write(uc, UC_ARM64_REG_PC, &pc);
+    uc_reg_write(Unicorn, UC_ARM64_REG_PC, &pc);
   }
 }
 
@@ -111,44 +111,44 @@ int main(int argc, const char **argv) {
     printf("USAGE: lunix [PATH] [ARGS...]\n");
     return 0;
   }
-  lunix_log("[lunix] v0.1.0\n");
+  LunixLog("[Lunix] v0.1.0\n");
 
   const char *path = argv[1];
 
-  uint64_t entry;
+  uint64_t Entry;
 
-  uc_engine *uc;
-  uc_err err = uc_open(UC_ARCH_ARM64, UC_MODE_ARM, &uc);
-  if (err != UC_ERR_OK) {
-    fprintf(stderr, "[lunix] failed to init unicorn: %s\n", uc_strerror(err));
+  uc_engine *Unicorn;
+  uc_err Error = uc_open(UC_ARCH_ARM64, UC_MODE_ARM, &Unicorn);
+  if (Error != UC_ERR_OK) {
+    fprintf(stderr, "[Lunix] failed to init unicorn: %s\n", uc_strerror(Error));
     return 1;
   }
 
-  lunix_debug("[lunix] path: %s\n", path);
-  if (load_elf(path, uc, &entry) != 0) {
-    fprintf(stderr, "[lunix] failed to load program\n");
+  LunixDebug("[Lunix] path: %s\n", path);
+  if (load_elf(path, Unicorn, &Entry) != 0) {
+    fprintf(stderr, "[Lunix] failed to load program\n");
     return 1;
   }
 
-  err = uc_mem_map(uc, LUNIX_HEAP_BASE, LUNIX_HEAP_SIZE,
-                   UC_PROT_READ | UC_PROT_WRITE);
-  if (err != UC_ERR_OK) {
-    fprintf(stderr, "[lunix] failed to map heap: %s\n", uc_strerror(err));
+  Error = uc_mem_map(Unicorn, LUNIX_HEAP_BASE, LUNIX_HEAP_SIZE,
+                     UC_PROT_READ | UC_PROT_WRITE);
+  if (Error != UC_ERR_OK) {
+    fprintf(stderr, "[Lunix] failed to map heap: %s\n", uc_strerror(Error));
     return 1;
   }
 
-  if (setup_stack(uc, 0x80000000, 0x10000, argc - 1, argv + 1) != 0) {
-    fprintf(stderr, "[lunix] failed to setup stack\n");
+  if (setup_stack(Unicorn, 0x80000000, 0x10000, argc - 1, argv + 1) != 0) {
+    fprintf(stderr, "[Lunix] failed to setup stack\n");
     return 1;
   }
-  uc_reg_write(uc, UC_ARM64_REG_PC, &entry);
+  uc_reg_write(Unicorn, UC_ARM64_REG_PC, &Entry);
 
   uc_hook hook;
-  uc_hook_add(uc, &hook, UC_HOOK_CODE, (void *)hook_code, NULL, 1, 0);
+  uc_hook_add(Unicorn, &hook, UC_HOOK_CODE, (void *)HookCode, NULL, 1, 0);
 
-  err = uc_emu_start(uc, entry, 0, 0, 0);
-  if (err != UC_ERR_OK) {
-    fprintf(stderr, "[lunix] emulation stopped: %s\n", uc_strerror(err));
+  Error = uc_emu_start(Unicorn, Entry, 0, 0, 0);
+  if (Error != UC_ERR_OK) {
+    fprintf(stderr, "[Lunix] emulation stopped: %s\n", uc_strerror(Error));
     return 1;
   }
 

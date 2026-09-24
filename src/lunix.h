@@ -9,15 +9,15 @@
 // #define LUNIX_ENABLE_DEBUG
 
 #ifdef LUNIX_ENABLE_LOG
-#define lunix_log printf
+#define LunixLog printf
 #else
-#define lunix_log(...) ((void)0)
+#define LunixLog(...) ((void)0)
 #endif
 
 #ifdef LUNIX_ENABLE_DEBUG
-#define lunix_debug printf
+#define LunixDebug printf
 #else
-#define lunix_debug(...) ((void)0)
+#define LunixDebug(...) ((void)0)
 #endif
 
-extern long lunix_syscall(uc_engine *uc);
+extern long LunixSyscall(uc_engine *Unicorn);

@@ -18,9 +18,9 @@
 
 #include "lunix.h"
 
-typedef uint32_t fd_t;
+typedef uint32_t Fd_t;
 
-static uint64_t heap_end = LUNIX_HEAP_BASE;
+static uint64_t HeapEnd = LUNIX_HEAP_BASE;
 
 struct linux_arm64_stat {
   uint64_t st_dev;
@@ -48,7 +48,7 @@ struct linux_arm64_stat {
 struct linux_dirent64 {
   uint64_t d_ino;
   int64_t d_off;
-  unsigned short d_reclen;
+  unsigned short d_RecLength;
   unsigned char d_type;
   char d_name[];
 };
@@ -61,342 +61,352 @@ struct linux_utsname {
   char machine[65];
 };
 
-static int lunix_translate_open_flags(int guest_flags) {
-  int host_flags = 0;
-  switch (guest_flags & 3) {
+static int32_t LunixTranslateOpenFlags(int32_t GuestFlags) {
+  int32_t HostFlags = 0;
+  switch (GuestFlags & 3) {
   case 0:
-    host_flags |= O_RDONLY;
+    HostFlags |= O_RDONLY;
     break;
   case 1:
-    host_flags |= O_WRONLY;
+    HostFlags |= O_WRONLY;
     break;
   case 2:
-    host_flags |= O_RDWR;
+    HostFlags |= O_RDWR;
     break;
   default:
     return -1;
   }
 
-  if (guest_flags & 0x40)
-    host_flags |= O_CREAT;
-  if (guest_flags & 0x80)
-    host_flags |= O_EXCL;
-  if (guest_flags & 0x200)
-    host_flags |= O_TRUNC;
-  if (guest_flags & 0x400)
-    host_flags |= O_APPEND;
-  if (guest_flags & 0x800)
-    host_flags |= O_NONBLOCK;
-  if (guest_flags & 0x10000)
-    host_flags |= O_DIRECTORY;
-  if (guest_flags & 0x20000)
-    host_flags |= O_NOFOLLOW;
-  if (guest_flags & 0x80000)
-    host_flags |= O_CLOEXEC;
-  return host_flags;
+  if (GuestFlags & 0x40)
+    HostFlags |= O_CREAT;
+  if (GuestFlags & 0x80)
+    HostFlags |= O_EXCL;
+  if (GuestFlags & 0x200)
+    HostFlags |= O_TRUNC;
+  if (GuestFlags & 0x400)
+    HostFlags |= O_APPEND;
+  if (GuestFlags & 0x800)
+    HostFlags |= O_NONBLOCK;
+  if (GuestFlags & 0x10000)
+    HostFlags |= O_DIRECTORY;
+  if (GuestFlags & 0x20000)
+    HostFlags |= O_NOFOLLOW;
+  if (GuestFlags & 0x80000)
+    HostFlags |= O_CLOEXEC;
+  return HostFlags;
 }
 
-static long lunix_read_string(uc_engine *uc, uint64_t addr, char *out,
-                              size_t out_size) {
-  for (size_t i = 0; i < out_size - 1; i++) {
+static long LunixReadString(uc_engine *Unicorn, uint64_t Address, char *Out,
+                            uint64_t OutSize) {
+  for (uint64_t i = 0; i < OutSize - 1; i++) {
     uint8_t c;
-    uc_err err = uc_mem_read(uc, addr + i, &c, 1);
-    if (err != UC_ERR_OK) {
+    uc_err Error = uc_mem_read(Unicorn, Address + i, &c, 1);
+    if (Error != UC_ERR_OK) {
       return -EFAULT;
     }
-    out[i] = (char)c;
+    Out[i] = (char)c;
     if (c == '\0') {
       return 0;
     }
   }
 
-  out[out_size - 1] = '\0';
+  Out[OutSize - 1] = '\0';
   return -ENAMETOOLONG;
 }
 
 // 17
-static long lunix_sys_getcwd(uc_engine *uc, uint64_t buf_addr, uint64_t size) {
-  char buf[4096];
-  if (getcwd(buf, sizeof(buf)) == NULL) {
+static long LunixSyscallGetcwd(uc_engine *Unicorn, uint64_t BufferAddress,
+                               uint64_t size) {
+  char Buffer[4096];
+  if (getcwd(Buffer, sizeof(Buffer)) == NULL) {
     return -errno;
   }
 
-  size_t len = strlen(buf);
-  if (len > size) {
+  uint64_t Length = strlen(Buffer);
+  if (Length > size) {
     return -ERANGE;
   }
 
-  uc_err err = uc_mem_write(uc, buf_addr, &buf, len);
-  if (err != UC_ERR_OK) {
+  uc_err Error = uc_mem_write(Unicorn, BufferAddress, &Buffer, Length);
+  if (Error != UC_ERR_OK) {
     return -EFAULT;
   }
-  return buf_addr;
+  return BufferAddress;
 }
 
 // 25
-static long lunix_sys_fcntl(uc_engine *uc, unsigned int fd, unsigned int cmd,
-                            unsigned long arg) {
+static long LunixSyscallFcntl(uc_engine *Unicorn, uint32_t Fd, uint32_t cmd,
+                              uint64_t arg) {
   struct flock flock;
-  int result;
-  uc_err err;
+  int32_t Result;
+  uc_err Error;
 
   switch (cmd) {
   case F_DUPFD:
   case F_DUPFD_CLOEXEC:
   case F_SETFD:
   case F_SETFL:
-    result = fcntl(fd, cmd, (int)arg);
+    Result = fcntl(Fd, cmd, arg);
     break;
 
   case F_GETFD:
   case F_GETFL:
-    result = fcntl(fd, cmd);
+    Result = fcntl(Fd, cmd);
     break;
 
   case F_GETLK:
   case F_SETLK:
   case F_SETLKW:
-    err = uc_mem_read(uc, arg, &flock, sizeof(flock));
-    if (err != UC_ERR_OK) {
+    Error = uc_mem_read(Unicorn, arg, &flock, sizeof(flock));
+    if (Error != UC_ERR_OK) {
       return -EFAULT;
     }
 
-    result = fcntl(fd, cmd, &flock);
+    Result = fcntl(Fd, cmd, &flock);
 
-    if (result == -1) {
+    if (Result == -1) {
       return -errno;
     }
 
-    err = uc_mem_write(uc, arg, &flock, sizeof(flock));
-    if (err != UC_ERR_OK) {
+    Error = uc_mem_write(Unicorn, arg, &flock, sizeof(flock));
+    if (Error != UC_ERR_OK) {
       return -EFAULT;
     }
 
-    return result;
+    return Result;
 
   default:
     return -ENOSYS;
   }
 
-  if (result == -1)
+  if (Result == -1)
     return -errno;
 
-  return result;
+  return Result;
 }
 
 // 29
-static long lunix_sys_ioctl(uc_engine *uc, uint64_t fd, uint64_t cmd,
-                            uint64_t arg) {
-  uc = uc;
-  int result = ioctl(fd, cmd, arg);
-  return result;
+static long LunixSyscallIoctl(uc_engine *Unicorn, uint64_t Fd, uint64_t cmd,
+                              uint64_t arg) {
+  Unicorn = Unicorn;
+  int32_t Result = ioctl(Fd, cmd, arg);
+  return Result;
 }
 
 // 56
-static long lunix_sys_openat(uc_engine *uc, int dirfd, uint64_t pathname_addr,
-                             int flags, mode_t mode) {
-  char path[4096];
-  long result = lunix_read_string(uc, pathname_addr, path, sizeof(path));
-  if (result < 0) {
-    return result;
+static long LunixSyscallOpenat(uc_engine *Unicorn, int32_t DirFd,
+                               uint64_t PathNameAddress, int32_t Flags,
+                               uint32_t mode) {
+  char PathName[4096];
+  long Result =
+      LunixReadString(Unicorn, PathNameAddress, PathName, sizeof(PathName));
+  if (Result < 0) {
+    return Result;
   }
-  path[sizeof(path) - 1] = '\0';
+  PathName[sizeof(PathName) - 1] = '\0';
 
-  flags = lunix_translate_open_flags(flags);
-  int fd = openat(dirfd, path, flags, mode);
-  if (fd < 0) {
+  Flags = LunixTranslateOpenFlags(Flags);
+  int32_t Fd = openat(DirFd, PathName, Flags, mode);
+  if (Fd < 0) {
     return -errno;
   }
-  return fd;
+  return Fd;
 }
 
 // 57
-static long lunix_sys_close(uc_engine *uc, int fd) {
-  uc = uc;
-  if (close(fd) < 0) {
+static long LunixSyscallClose(uc_engine *Unicorn, int32_t Fd) {
+  Unicorn = Unicorn;
+  if (close(Fd) < 0) {
     return -errno;
   }
   return 0;
 }
 
 // 61
-static long lunix_sys_getdents64(uc_engine *uc, int fd, uint64_t dirp,
-                                 unsigned int count) {
-  char *buffer = malloc(count);
-  if (!buffer) {
+static long LunixSyscallGetdents64(uc_engine *Unicorn, int32_t Fd,
+                                   uint64_t dirp, uint32_t Count) {
+  char *Buffer = malloc(Count);
+  if (!Buffer) {
     return -ENOMEM;
   }
 
-  long result = syscall(SYS_getdents64, fd, buffer, count);
+  long Result = syscall(SYS_getdents64, Fd, Buffer, Count);
 
-  if (result < 0) {
-    result = -errno;
-    free(buffer);
-    return result;
+  if (Result < 0) {
+    Result = -errno;
+    free(Buffer);
+    return Result;
   }
 
-  unsigned long pos = 0;
-  unsigned long written = 0;
+  uint64_t pos = 0;
+  uint64_t written = 0;
 
-  while (pos < (unsigned long)result) {
-    struct linux_dirent64 *host_entry = (struct linux_dirent64 *)(buffer + pos);
+  while (pos < (uint64_t)Result) {
+    struct linux_dirent64 *host_entry = (struct linux_dirent64 *)(Buffer + pos);
 
-    size_t name_len = strlen(host_entry->d_name);
+    uint64_t NameLength = strlen(host_entry->d_name);
 
-    size_t reclen = offsetof(struct linux_dirent64, d_name) + name_len + 1;
+    uint64_t RecLength =
+        offsetof(struct linux_dirent64, d_name) + NameLength + 1;
 
-    reclen = (reclen + 7) & ~7UL;
+    RecLength = (RecLength + 7) & ~7UL;
 
-    if (written + reclen > count) {
+    if (written + RecLength > Count) {
       break;
     }
 
     struct linux_dirent64 guest_entry = {.d_ino = host_entry->d_ino,
                                          .d_off = host_entry->d_off,
-                                         .d_reclen = reclen,
+                                         .d_RecLength = RecLength,
                                          .d_type = host_entry->d_type};
 
-    uc_err err = uc_mem_write(uc, dirp + written, &guest_entry,
-                              offsetof(struct linux_dirent64, d_name));
+    uc_err Error = uc_mem_write(Unicorn, dirp + written, &guest_entry,
+                                offsetof(struct linux_dirent64, d_name));
 
-    if (err != UC_ERR_OK) {
-      free(buffer);
+    if (Error != UC_ERR_OK) {
+      free(Buffer);
       return -EFAULT;
     }
 
-    err = uc_mem_write(uc,
-                       dirp + written + offsetof(struct linux_dirent64, d_name),
-                       host_entry->d_name, name_len + 1);
+    Error = uc_mem_write(
+        Unicorn, dirp + written + offsetof(struct linux_dirent64, d_name),
+        host_entry->d_name, NameLength + 1);
 
-    if (err != UC_ERR_OK) {
-      free(buffer);
+    if (Error != UC_ERR_OK) {
+      free(Buffer);
       return -EFAULT;
     }
 
-    written += reclen;
-    pos += host_entry->d_reclen;
+    written += RecLength;
+    pos += host_entry->d_RecLength;
   }
 
-  free(buffer);
+  free(Buffer);
   return written;
 }
 
 // 62
-static long lunix_sys_lseek(uc_engine *uc, unsigned int fd, off_t offset,
-                            unsigned int whence) {
-  off_t result = lseek(fd, offset, whence);
+static long LunixSyscalllSeek(uc_engine *Unicorn, uint32_t Fd, int64_t Offset,
+                              uint32_t whence) {
+  int64_t Result = lseek(Fd, Offset, whence);
 
-  if (result == (off_t)-1) {
+  if (Result == -1) {
     return -errno;
   }
 
-  return result;
+  return Result;
 }
 
 // 63
-static long lunix_sys_read(uc_engine *uc, int fd, uint64_t buf_addr,
-                           unsigned long count) {
-  char *buf = malloc(count);
-  ssize_t result = read(fd, buf, count);
-  if (!result) {
-    free(buf);
+static long LunixSyscallRead(uc_engine *Unicorn, int32_t Fd,
+                             uint64_t BufferAddress, uint64_t Count) {
+  char *Buffer = malloc(Count);
+  uint64_t Result = read(Fd, Buffer, Count);
+  if (!Result) {
+    free(Buffer);
     return -ENOMEM;
   }
 
-  uc_err err = uc_mem_write(uc, buf_addr, buf, count);
-  free(buf);
-  if (err != UC_ERR_OK) {
+  uc_err Error = uc_mem_write(Unicorn, BufferAddress, Buffer, Count);
+  free(Buffer);
+  if (Error != UC_ERR_OK) {
     return -EFAULT;
   }
-  return result;
+  return Result;
 }
 
 // 64
-static long lunix_sys_write(uc_engine *uc, int fd, uint64_t buf,
-                            unsigned long count) {
-  char *data = malloc(count + 1);
-  if (!data) {
+static long LunixSyscallWrite(uc_engine *Unicorn, int32_t Fd, uint64_t Buffer,
+                              uint64_t Count) {
+  char *Data = malloc(Count + 1);
+  if (!Data) {
     return -12;
   }
 
-  uc_err err = uc_mem_read(uc, buf, data, count);
-  if (err != UC_ERR_OK) {
-    free(data);
+  uc_err Error = uc_mem_read(Unicorn, Buffer, Data, Count);
+  if (Error != UC_ERR_OK) {
+    free(Data);
     return -14;
   }
-  data[count] = '\0';
+  Data[Count] = '\0';
 
-  long result = write(fd, data, count);
-  free(data);
-  return result;
+  long Result = write(Fd, Data, Count);
+  free(Data);
+  return Result;
 }
 
 // 71
-static long lunix_sys_sendfile(uc_engine *uc, int out_fd, int in_fd,
-                               uint64_t offset_addr, uint64_t count) {
-  int64_t offset;
-  if (offset_addr != 0) {
-    uc_err err = uc_mem_read(uc, offset_addr, &offset, sizeof(offset));
-    if (err != UC_ERR_OK) {
+static long LunixSyscallSendfile(uc_engine *Unicorn, int32_t OutFd,
+                                 int32_t InFd, uint64_t OffsetAddress,
+                                 uint64_t Count) {
+  int64_t Offset;
+  if (OffsetAddress != 0) {
+    uc_err Error = uc_mem_read(Unicorn, OffsetAddress, &Offset, sizeof(Offset));
+    if (Error != UC_ERR_OK) {
       return -EFAULT;
     }
   }
 
-  ssize_t result = sendfile(out_fd, in_fd, offset_addr ? &offset : NULL, count);
-  if (result < 0) {
+  uint64_t Result =
+      sendfile(OutFd, InFd, OffsetAddress ? &Offset : NULL, Count);
+  if (Result < 0) {
     return -errno;
   }
 
-  if (offset_addr != 0) {
-    uc_err err = uc_mem_write(uc, offset_addr, &offset, sizeof(offset));
-    if (err != UC_ERR_OK) {
+  if (OffsetAddress != 0) {
+    uc_err Error =
+        uc_mem_write(Unicorn, OffsetAddress, &Offset, sizeof(Offset));
+    if (Error != UC_ERR_OK) {
       return -EFAULT;
     }
   }
-  return result;
+  return Result;
 }
 
 // 78
-static long lunix_sys_readlinkat(uc_engine *uc, int dirfd, uint64_t pathname,
-                                 uint64_t buf, uint64_t len) {
-  if (len == 0) {
+static long LunixSyscallReadlinkat(uc_engine *Unicorn, int32_t DirFd,
+                                   uint64_t Pathname, uint64_t Buffer,
+                                   uint64_t Length) {
+  if (Length == 0) {
     return 0;
   }
 
-  char path[4096];
-  long sresult = lunix_read_string(uc, pathname, path, sizeof(path));
-  if (sresult < 0) {
-    return sresult;
+  char PathName[4096];
+  long sResult = LunixReadString(Unicorn, Pathname, PathName, sizeof(PathName));
+  if (sResult < 0) {
+    return sResult;
   }
-  path[sizeof(path) - 1] = '\0';
-  char *data = malloc(len);
-  if (!data) {
+  PathName[sizeof(PathName) - 1] = '\0';
+  char *Data = malloc(Length);
+  if (!Data) {
     return -12;
   }
 
-  ssize_t result = readlinkat(dirfd, path, data, len);
-  if (result >= 0) {
-    uc_err err = uc_mem_write(uc, buf, data, result);
-    if (err != UC_ERR_OK) {
-      result = -14;
+  uint64_t Result = readlinkat(DirFd, PathName, Data, Length);
+  if (Result >= 0) {
+    uc_err Error = uc_mem_write(Unicorn, Buffer, Data, Result);
+    if (Error != UC_ERR_OK) {
+      Result = -14;
     }
   }
-  free(data);
-  return result;
+  free(Data);
+  return Result;
 }
 
 // 79
-static long lunix_sys_newfstat(uc_engine *uc, int dirfd, uint64_t pathname_addr,
-                               uint64_t stat_addr, int flags) {
-  char path[4096];
-  long result = lunix_read_string(uc, pathname_addr, path, sizeof(path));
-  if (result < 0) {
-    return result;
+static long LunixSyscallNewfstat(uc_engine *Unicorn, int32_t DirFd,
+                                 uint64_t PathNameAddress, uint64_t StatAddress,
+                                 int32_t Flags) {
+  char PathName[4096];
+  long Result =
+      LunixReadString(Unicorn, PathNameAddress, PathName, sizeof(PathName));
+  if (Result < 0) {
+    return Result;
   }
-  path[sizeof(path) - 1] = '\0';
+  PathName[sizeof(PathName) - 1] = '\0';
 
   struct stat host;
-  if (fstatat(dirfd, path, &host, flags) < 0) {
+  if (fstatat(DirFd, PathName, &host, Flags) < 0) {
     return -errno;
   }
 
@@ -419,17 +429,18 @@ static long lunix_sys_newfstat(uc_engine *uc, int dirfd, uint64_t pathname_addr,
       .st_ctime_nsec = host.st_ctim.tv_nsec,
   };
 
-  uc_err err = uc_mem_write(uc, stat_addr, &guest, sizeof(guest));
-  if (err != UC_ERR_OK) {
+  uc_err Error = uc_mem_write(Unicorn, StatAddress, &guest, sizeof(guest));
+  if (Error != UC_ERR_OK) {
     return -14;
   }
   return 0;
 }
 
 // 80
-static long lunix_sys_fstat(uc_engine *uc, int fd, uint64_t stat_addr) {
+static long LunixSyscallFstat(uc_engine *Unicorn, int32_t Fd,
+                              uint64_t StatAddress) {
   struct stat host;
-  if (fstat(fd, &host) < 0) {
+  if (fstat(Fd, &host) < 0) {
     return -errno;
   }
 
@@ -452,64 +463,65 @@ static long lunix_sys_fstat(uc_engine *uc, int fd, uint64_t stat_addr) {
       .st_ctime_nsec = host.st_ctim.tv_nsec,
   };
 
-  uc_err err = uc_mem_write(uc, stat_addr, &guest, sizeof(guest));
-  if (err != UC_ERR_OK) {
+  uc_err Error = uc_mem_write(Unicorn, StatAddress, &guest, sizeof(guest));
+  if (Error != UC_ERR_OK) {
     return -14;
   }
   return 0;
 }
 
 // 93
-static long lunix_sys_exit(uc_engine *uc, int status) {
-  uc = uc;
+static long LunixSyscallExit(uc_engine *Unicorn, int32_t status) {
+  Unicorn = Unicorn;
   status = status;
-  lunix_log("[lunix] exit: %d\n", status);
-  uc_emu_stop(uc);
+  LunixLog("[lunix] exit: %d\n", status);
+  uc_emu_stop(Unicorn);
   return 0;
 }
 
 // 93
-static long lunix_sys_exit_group(uc_engine *uc, int status) {
+static long LunixSyscallExit_group(uc_engine *Unicorn, int32_t status) {
   status = status;
-  uc_emu_stop(uc);
+  uc_emu_stop(Unicorn);
   return 0;
 }
 
 // 96
-static long lunix_sys_set_tid_address(uc_engine *uc, uint64_t tidptr) {
-  uc = uc;
+static long LunixSyscallSet_tid_addr(uc_engine *Unicorn, uint64_t tidptr) {
+  Unicorn = Unicorn;
   tidptr = tidptr;
   return 0;
 }
 
 // 99
-static long lunix_sys_set_robust_list(uc_engine *uc, uint64_t head,
-                                      uint64_t len) {
-  uc = uc;
+static long LunixSyscallSet_robust_list(uc_engine *Unicorn, uint64_t head,
+                                        uint64_t Length) {
+  Unicorn = Unicorn;
   head = head;
-  len = len;
+  Length = Length;
   return 0;
 }
 
 // 113
-static long lunix_sys_clock_gettime(uc_engine *uc, int which_clock,
-                                    uint64_t tp) {
+static long LunixSyscallClock_Gettime(uc_engine *Unicorn, int32_t which_clock,
+                                      uint64_t tp) {
   struct timespec ts;
   if (clock_gettime(which_clock, &ts) < 0) {
     return -errno;
   }
 
-  uc_err err = uc_mem_write(uc, tp, &ts, sizeof(ts));
-  if (err != UC_ERR_OK) {
+  uc_err Error = uc_mem_write(Unicorn, tp, &ts, sizeof(ts));
+  if (Error != UC_ERR_OK) {
     return -14;
   }
   return 0;
 }
 
 // 134
-static long lunix_sys_rt_sigaction(uc_engine *uc, int sig, uint64_t act,
-                                   uint64_t oldact, size_t sigsetsize) {
-  uc = uc;
+static long LunixSyscallRt_sigaction(uc_engine *Unicorn, int32_t sig,
+                                     uint64_t act, uint64_t oldact,
+                                     uint64_t sigsetsize) {
+  Unicorn = Unicorn;
   sig = sig;
   act = act;
   oldact = oldact;
@@ -518,35 +530,35 @@ static long lunix_sys_rt_sigaction(uc_engine *uc, int sig, uint64_t act,
 }
 
 // 144
-static long lunix_sys_setgid(uc_engine *uc, uint64_t gid) {
-  uc = uc;
+static long LunixSyscallSetgid(uc_engine *Unicorn, uint64_t gid) {
+  Unicorn = Unicorn;
   gid = gid;
   return 0;
 }
 
 // 145
-static long lunix_sys_setregid(uc_engine *uc, uint64_t egid) {
-  uc = uc;
+static long LunixSyscallSetregid(uc_engine *Unicorn, uint64_t egid) {
+  Unicorn = Unicorn;
   egid = egid;
   return 0;
 }
 
 // 146
-static long lunix_sys_setuid(uc_engine *uc, uint64_t uid) {
-  uc = uc;
+static long LunixSyscallSetuid(uc_engine *Unicorn, uint64_t uid) {
+  Unicorn = Unicorn;
   uid = uid;
   return 0;
 }
 
 // 147
-static long lunix_sys_setreuid(uc_engine *uc, uint64_t euid) {
-  uc = uc;
+static long LunixSyscallSetreuid(uc_engine *Unicorn, uint64_t euid) {
+  Unicorn = Unicorn;
   euid = euid;
   return 0;
 }
 
 // 160
-static long lunix_sys_uname(uc_engine *uc, uint64_t addr) {
+static long LunixSyscallUname(uc_engine *Unicorn, uint64_t Address) {
   struct linux_utsname uts = {0};
   strcpy(uts.sysname, "Linux");
   strcpy(uts.nodename, "lunix");
@@ -554,124 +566,123 @@ static long lunix_sys_uname(uc_engine *uc, uint64_t addr) {
   strcpy(uts.version, "#1 lunix");
   strcpy(uts.machine, "aarch64");
 
-  uc_err err = uc_mem_write(uc, addr, &uts, sizeof(uts));
-  if (err != UC_ERR_OK) {
+  uc_err Error = uc_mem_write(Unicorn, Address, &uts, sizeof(uts));
+  if (Error != UC_ERR_OK) {
     return -EFAULT;
   }
   return 0;
 }
 
 // 172
-static long lunix_sys_getpid(uc_engine *uc) {
-  uc = uc;
+static long LunixSyscallGetpid(uc_engine *Unicorn) {
+  Unicorn = Unicorn;
   return getpid();
 }
 
 // 173
-static long lunix_sys_getppid(uc_engine *uc) {
-  uc = uc;
+static long LunixSyscallGetppid(uc_engine *Unicorn) {
+  Unicorn = Unicorn;
   return getppid();
 }
 
 // 174
-static long lunix_sys_getuid(uc_engine *uc) {
-  uc = uc;
+static long LunixSyscallGetuid(uc_engine *Unicorn) {
+  Unicorn = Unicorn;
   return getuid();
 }
 
 // 175
-static long lunix_sys_geteuid(uc_engine *uc) {
-  uc = uc;
+static long LunixSyscallGeteuid(uc_engine *Unicorn) {
+  Unicorn = Unicorn;
   return getuid();
 }
 
 // 176
-static long lunix_sys_getgid(uc_engine *uc) {
-  uc = uc;
+static long LunixSyscallGetgid(uc_engine *Unicorn) {
+  Unicorn = Unicorn;
   return getgid();
 }
 
 // 177
-static long lunix_sys_getegid(uc_engine *uc) {
-  uc = uc;
+static long LunixSyscallGetegid(uc_engine *Unicorn) {
+  Unicorn = Unicorn;
   return getgid();
 }
 
 // 214
-static long lunix_sys_brk(uc_engine *uc, uint64_t address) {
-  uc = uc;
-  if (address == 0) {
-    return heap_end;
+static long LunixSyscallBrk(uc_engine *Unicorn, uint64_t addr) {
+  Unicorn = Unicorn;
+  if (addr == 0) {
+    return HeapEnd;
   }
-  if (address < LUNIX_HEAP_BASE ||
-      address > LUNIX_HEAP_BASE + LUNIX_HEAP_SIZE) {
-    return heap_end;
+  if (addr < LUNIX_HEAP_BASE || addr > LUNIX_HEAP_BASE + LUNIX_HEAP_SIZE) {
+    return HeapEnd;
   }
-  heap_end = address;
-  return heap_end;
+  HeapEnd = addr;
+  return HeapEnd;
 }
 
 // 222
-static long lunix_sys_mmap(uc_engine *uc, uint64_t addr, uint64_t len, int prot,
-                           int flags, int fd, off_t offset) {
-  fd = fd;
-  offset = offset;
+static long LunixSyscallMmap(uc_engine *Unicorn, uint64_t Address,
+                             uint64_t Length, int32_t Protect, int32_t Flags,
+                             int32_t Fd, int64_t Offset) {
+  Fd = Fd;
+  Offset = Offset;
   static uint64_t mmap_next = LUNIX_MMAP_BASE;
-  if (len == 0)
+  if (Length == 0)
     return -EINVAL;
 
-  uint64_t size = (len + 0xfffULL) & ~0xfffULL;
-  uint64_t start = addr & ~0xfffULL;
+  uint64_t size = (Length + 0xfffULL) & ~0xfffULL;
+  uint64_t start = Address & ~0xfffULL;
 
-  if (addr == 0)
+  if (Address == 0)
     start = mmap_next;
 
   uint64_t end = start + size;
   if (end <= start)
     return -EINVAL;
 
-  int perms = 0;
-  if (prot & PROT_READ)
-    perms |= UC_PROT_READ;
-  if (prot & PROT_WRITE)
-    perms |= UC_PROT_WRITE;
-  if (prot & PROT_EXEC)
-    perms |= UC_PROT_EXEC;
+  int32_t Perms = 0;
+  if (Protect & PROT_READ)
+    Perms |= UC_PROT_READ;
+  if (Protect & PROT_WRITE)
+    Perms |= UC_PROT_WRITE;
+  if (Protect & PROT_EXEC)
+    Perms |= UC_PROT_EXEC;
 
-  uc_err err = uc_mem_map(uc, start, size, perms);
-  if (err != UC_ERR_OK) {
-    lunix_log("[lunix] mmap: start=0x%lx size=0x%lx prot=0x%x flags=0x%x\n",
-              start, size, prot, flags);
-    lunix_log("[lunix] mmap: %s\n", uc_strerror(err));
+  uc_err Error = uc_mem_map(Unicorn, start, size, Perms);
+  if (Error != UC_ERR_OK) {
+    LunixLog("[lunix] mmap: start=0x%lx size=0x%lx Protect=0x%x Flags=0x%x\n",
+             start, size, Protect, Flags);
+    LunixLog("[lunix] mmap: %s\n", uc_strerror(Error));
     return -ENOMEM;
   }
 
-  if (addr == 0)
+  if (Address == 0)
     mmap_next = end;
 
   return start;
 }
 
 // 226
-static long lunix_sys_mprotect(uc_engine *uc, uint64_t addr, uint64_t len,
-                               int prot) {
-  uint64_t start = addr & ~0xfffULL;
-  uint64_t end = (addr + len + 0xfff) & ~0xfffULL;
+static long LunixSyscallMProtectect(uc_engine *Unicorn, uint64_t Address,
+                                    uint64_t Length, int32_t Protect) {
+  uint64_t start = Address & ~0xfffULL;
+  uint64_t end = (Address + Length + 0xfff) & ~0xfffULL;
   if (end <= start) {
     return -22;
   }
 
-  int perms = 0;
-  if (prot & PROT_READ)
-    perms |= UC_PROT_READ;
-  if (prot & PROT_WRITE)
-    perms |= UC_PROT_WRITE;
-  if (prot & PROT_EXEC)
-    perms |= UC_PROT_EXEC;
+  int32_t Perms = 0;
+  if (Protect & PROT_READ)
+    Perms |= UC_PROT_READ;
+  if (Protect & PROT_WRITE)
+    Perms |= UC_PROT_WRITE;
+  if (Protect & PROT_EXEC)
+    Perms |= UC_PROT_EXEC;
 
-  uc_err err = uc_mem_protect(uc, start, end - start, perms);
-  if (err != UC_ERR_OK) {
-    lunix_log("[lunix] mprotect: %s\n", uc_strerror(err));
+  uc_err Error = uc_mem_protect(Unicorn, start, end - start, Perms);
+  if (Error != UC_ERR_OK) {
     return -22;
   }
 
@@ -679,19 +690,20 @@ static long lunix_sys_mprotect(uc_engine *uc, uint64_t addr, uint64_t len,
 }
 
 // 233
-static long lunix_sys_madvise(uc_engine *uc, uint64_t addr, uint64_t len,
-                              int advice) {
-  uc = uc;
-  addr = addr;
-  len = len;
+static long LunixSyscallMadvise(uc_engine *Unicorn, uint64_t Address,
+                                uint64_t Length, int32_t advice) {
+  Unicorn = Unicorn;
+  Address = Address;
+  Length = Length;
   advice = advice;
   return 0;
 }
 
 // 261
-static long lunix_sys_prlimit64(uc_engine *uc, uint64_t pid, uint64_t resource,
-                                uint64_t new_limit, uint64_t old_limit) {
-  uc = uc;
+static long LunixSyscallPrlimit64(uc_engine *Unicorn, uint64_t pid,
+                                  uint64_t resource, uint64_t new_limit,
+                                  uint64_t old_limit) {
+  Unicorn = Unicorn;
   pid = pid;
   resource = resource;
   new_limit = new_limit;
@@ -700,178 +712,179 @@ static long lunix_sys_prlimit64(uc_engine *uc, uint64_t pid, uint64_t resource,
 }
 
 // 278
-static long lunix_sys_getrandom(uc_engine *uc, uint64_t buf, uint64_t len,
-                                unsigned int flags) {
-  uint8_t *data = malloc(len);
-  if (!data) {
+static long LunixSyscallGetrandom(uc_engine *Unicorn, uint64_t Buffer,
+                                  uint64_t Length, uint32_t Flags) {
+  uint8_t *Data = malloc(Length);
+  if (!Data) {
     return -12;
   }
 
-  ssize_t result = getrandom(data, len, flags);
-  if (result < 0) {
-    free(data);
+  uint64_t Result = getrandom(Data, Length, Flags);
+  if (Result < 0) {
+    free(Data);
     return -1;
   }
 
-  uc_err err = uc_mem_write(uc, buf, data, result);
-  if (err != UC_ERR_OK) {
+  uc_err Error = uc_mem_write(Unicorn, Buffer, Data, Result);
+  if (Error != UC_ERR_OK) {
     return -14;
   }
 
-  free(data);
-  return result;
+  free(Data);
+  return Result;
 }
 
 // 293
-static long lunix_sys_rseq(uc_engine *uc, uint64_t rseq, uint64_t rseq_len,
-                           uint64_t flags, uint64_t sig) {
-  uc = uc;
+static long LunixSyscallRseq(uc_engine *Unicorn, uint64_t rseq,
+                             uint64_t RseqLength, uint64_t Flags,
+                             uint64_t sig) {
+  Unicorn = Unicorn;
   rseq = rseq;
-  rseq_len = rseq_len;
-  flags = flags;
+  RseqLength = RseqLength;
+  Flags = Flags;
   sig = sig;
   return 0;
 }
 
-long lunix_syscall(uc_engine *uc) {
-  uint64_t number;
-  uint64_t r0;
-  uint64_t r1;
-  uint64_t r2;
-  uint64_t r3;
+long LunixSyscall(uc_engine *Unicorn) {
+  uint64_t SyscallNumber;
+  uint64_t Reg0;
+  uint64_t Reg1;
+  uint64_t Reg2;
+  uint64_t Reg3;
 
-  uc_reg_read(uc, UC_ARM64_REG_X8, &number);
-  uc_reg_read(uc, UC_ARM64_REG_X0, &r0);
-  uc_reg_read(uc, UC_ARM64_REG_X1, &r1);
-  uc_reg_read(uc, UC_ARM64_REG_X2, &r2);
-  uc_reg_read(uc, UC_ARM64_REG_X3, &r3);
+  uc_reg_read(Unicorn, UC_ARM64_REG_X8, &SyscallNumber);
+  uc_reg_read(Unicorn, UC_ARM64_REG_X0, &Reg0);
+  uc_reg_read(Unicorn, UC_ARM64_REG_X1, &Reg1);
+  uc_reg_read(Unicorn, UC_ARM64_REG_X2, &Reg2);
+  uc_reg_read(Unicorn, UC_ARM64_REG_X3, &Reg3);
 
-  lunix_debug("[lunix] number: %lu\n", number);
-  lunix_debug("[lunix] r0: %lu\n", r0);
-  lunix_debug("[lunix] r1: %lu\n", r1);
-  lunix_debug("[lunix] r2: %lu\n", r2);
-  lunix_debug("[lunix] r3: %lu\n", r3);
+  LunixDebug("[lunix] SyscallNumber: %lu\n", SyscallNumber);
+  LunixDebug("[lunix] Reg0: %lu\n", Reg0);
+  LunixDebug("[lunix] Reg1: %lu\n", Reg1);
+  LunixDebug("[lunix] Reg2: %lu\n", Reg2);
+  LunixDebug("[lunix] Reg3: %lu\n", r3);
 
-  switch (number) {
+  switch (SyscallNumber) {
   case 17:
-    return lunix_sys_getcwd(uc, r0, r1);
+    return LunixSyscallGetcwd(Unicorn, Reg0, Reg1);
 
   case 25:
-    return lunix_sys_fcntl(uc, r0, r1, r2);
+    return LunixSyscallFcntl(Unicorn, Reg0, Reg1, Reg2);
 
   case 29:
-    return lunix_sys_ioctl(uc, r0, r1, r2);
+    return LunixSyscallIoctl(Unicorn, Reg0, Reg1, Reg2);
 
   case 56:
-    return lunix_sys_openat(uc, (int)r0, r1, (int)r2, (mode_t)r3);
+    return LunixSyscallOpenat(Unicorn, Reg0, Reg1, Reg2, Reg3);
 
   case 57:
-    return lunix_sys_close(uc, (int)r0);
+    return LunixSyscallClose(Unicorn, Reg0);
 
   case 61:
-    return lunix_sys_getdents64(uc, r0, r1, r2);
+    return LunixSyscallGetdents64(Unicorn, Reg0, Reg1, Reg2);
 
   case 62:
-    return lunix_sys_read(uc, r0, r1, r2);
+    return LunixSyscallRead(Unicorn, Reg0, Reg1, Reg2);
 
   case 63:
-    return lunix_sys_read(uc, (int)r0, r1, r2);
+    return LunixSyscallRead(Unicorn, Reg0, Reg1, Reg2);
 
   case 64:
-    return lunix_sys_write(uc, (int)r0, r1, r2);
+    return LunixSyscallWrite(Unicorn, Reg0, Reg1, Reg2);
 
   case 71:
-    return lunix_sys_sendfile(uc, (int)r0, (int)r1, (int64_t)r2, (uint64_t)r3);
+    return LunixSyscallSendfile(Unicorn, Reg0, Reg1, Reg2, Reg3);
 
   case 78:
-    return lunix_sys_readlinkat(uc, (int)r0, r1, r2, r3);
+    return LunixSyscallReadlinkat(Unicorn, Reg0, Reg1, Reg2, Reg3);
 
   case 79:
-    return lunix_sys_newfstat(uc, (int)r0, r1, r2, (int)r3);
+    return LunixSyscallNewfstat(Unicorn, Reg0, Reg1, Reg2, Reg3);
 
   case 80:
-    return lunix_sys_fstat(uc, (int)r0, r1);
+    return LunixSyscallFstat(Unicorn, Reg0, Reg1);
 
   case 93:
-    return lunix_sys_exit(uc, (int)r0);
+    return LunixSyscallExit(Unicorn, Reg0);
 
   case 94:
-    return lunix_sys_exit_group(uc, (int)r0);
+    return LunixSyscallExit_group(Unicorn, Reg0);
 
   case 96:
-    return lunix_sys_set_tid_address(uc, r0);
+    return LunixSyscallSet_tid_addr(Unicorn, Reg0);
 
   case 99:
-    return lunix_sys_set_robust_list(uc, r0, r1);
+    return LunixSyscallSet_robust_list(Unicorn, Reg0, Reg1);
 
   case 113:
-    return lunix_sys_clock_gettime(uc, (int)r0, r1);
+    return LunixSyscallClock_Gettime(Unicorn, Reg0, Reg1);
 
   case 134:
-    return lunix_sys_rt_sigaction(uc, (int)r0, r1, r2, r3);
+    return LunixSyscallRt_sigaction(Unicorn, Reg0, Reg1, Reg2, Reg3);
 
   case 144:
-    return lunix_sys_setgid(uc, r0);
+    return LunixSyscallSetgid(Unicorn, Reg0);
 
   case 145:
-    return lunix_sys_setregid(uc, r0);
+    return LunixSyscallSetregid(Unicorn, Reg0);
 
   case 146:
-    return lunix_sys_setuid(uc, r0);
+    return LunixSyscallSetuid(Unicorn, Reg0);
 
   case 147:
-    return lunix_sys_setreuid(uc, r0);
+    return LunixSyscallSetreuid(Unicorn, Reg0);
 
   case 160:
-    return lunix_sys_uname(uc, r0);
+    return LunixSyscallUname(Unicorn, Reg0);
 
   case 172:
-    return lunix_sys_getpid(uc);
+    return LunixSyscallGetpid(Unicorn);
 
   case 173:
-    return lunix_sys_getppid(uc);
+    return LunixSyscallGetppid(Unicorn);
 
   case 174:
-    return lunix_sys_getuid(uc);
+    return LunixSyscallGetuid(Unicorn);
 
   case 175:
-    return lunix_sys_geteuid(uc);
+    return LunixSyscallGeteuid(Unicorn);
 
   case 176:
-    return lunix_sys_getgid(uc);
+    return LunixSyscallGetgid(Unicorn);
 
   case 177:
-    return lunix_sys_getegid(uc);
+    return LunixSyscallGetegid(Unicorn);
 
   case 214:
-    return lunix_sys_brk(uc, r0);
+    return LunixSyscallBrk(Unicorn, Reg0);
 
   case 222:
-    uint64_t r4;
-    uint64_t r5;
-    uc_reg_read(uc, UC_ARM64_REG_X4, &r4);
-    uc_reg_read(uc, UC_ARM64_REG_X5, &r5);
-    lunix_debug("[lunix] r4: %lu\n", r4);
-    lunix_debug("[lunix] r5: %lu\n", r5);
-    return lunix_sys_mmap(uc, r0, r1, (int)r2, (int)r3, (int)r4, (off_t)r5);
+    uint64_t Reg4;
+    uint64_t Reg5;
+    uc_reg_read(Unicorn, UC_ARM64_REG_X4, &Reg4);
+    uc_reg_read(Unicorn, UC_ARM64_REG_X5, &Reg5);
+    LunixDebug("[Lunix] Reg4: %lu\n", Reg4);
+    LunixDebug("[Lunix] Reg5: %lu\n", Reg5);
+    return LunixSyscallMmap(Unicorn, Reg0, Reg1, Reg2, Reg3, Reg4, Reg5);
 
   case 261:
-    return lunix_sys_prlimit64(uc, r0, r1, r2, r3);
+    return LunixSyscallPrlimit64(Unicorn, Reg0, Reg1, Reg2, Reg3);
 
   case 226:
-    return lunix_sys_mprotect(uc, r0, r1, r2);
+    return LunixSyscallMProtectect(Unicorn, Reg0, Reg1, Reg2);
 
   case 233:
-    return lunix_sys_madvise(uc, r0, r1, (int)r2);
+    return LunixSyscallMadvise(Unicorn, Reg0, Reg1, Reg2);
 
   case 278:
-    return lunix_sys_getrandom(uc, r0, r1, (unsigned int)r2);
+    return LunixSyscallGetrandom(Unicorn, Reg0, Reg1, Reg2);
 
   case 293:
-    return lunix_sys_rseq(uc, r0, r1, r2, r3);
+    return LunixSyscallRseq(Unicorn, Reg0, Reg1, Reg2, Reg3);
 
   default:
-    lunix_log("[lunix] unimplemented syscall: %lu\n", number);
+    LunixLog("[Lunix] unimplemented syscall: %lu\n", SyscallNumber);
     return -38;
   }
 }

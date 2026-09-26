@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "lunix.h"
 
 bool LunixAlive = true;
@@ -10,7 +12,21 @@ int LunixScheduler() {
 
   for (int i = 0; i < LunixProcessCount; i++) {
     LunixProcess *Process = LunixProcesses[i];
-    if (Process->State == LUNIX_PSTATE_WAITING) {
+    switch (Process->State) {
+    case LUNIX_PSTATE_WAITING:
+      continue;
+
+    case LUNIX_PSTATE_EXITED:
+      uc_close(Process->UnicornVM);
+      free(Process);
+
+      memmove(&LunixProcesses[i], &LunixProcesses[i + 1],
+              (LunixProcessCount - i - 1) * sizeof(LunixProcesses[0]));
+
+      LunixProcessCount--;
+      LunixProcesses[LunixProcessCount] = NULL;
+
+      i--;
       continue;
     }
 

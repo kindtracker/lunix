@@ -23,7 +23,5 @@ int main(int Argc, const char **Argv) {
     }
   }
 
-  free(Process);
-
   return 0;
 }

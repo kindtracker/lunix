@@ -286,7 +286,7 @@ static long LunixSyscallGetdents64(uc_engine *Unicorn, int32_t Fd,
 }
 
 // 62
-static long LunixSyscalllSeek(uc_engine *Unicorn, uint32_t Fd, int64_t Offset,
+static long LunixSyscallLseek(uc_engine *Unicorn, uint32_t Fd, int64_t Offset,
                               uint32_t whence) {
   int64_t Result = lseek(Fd, Offset, whence);
 
@@ -517,6 +517,27 @@ static long LunixSyscallClock_Gettime(uc_engine *Unicorn, int32_t which_clock,
     return -14;
   }
   return 0;
+}
+
+// 133
+static long LunixSyscallMknodat(uc_engine *Unicorn, LunixProcess *Process,
+                                int32_t DirFd, uint64_t GPath, uint32_t Mode,
+                                uint64_t Dev) {
+  printf("Test\n");
+  char Path[4096];
+
+  printf("mknodat: dirfd=%d path=0x%lx mode=%o dev=0x%lx\n", DirFd, GPath, Mode,
+         Dev);
+
+  if (LunixReadString(Unicorn, GPath, Path, sizeof(Path)) < 0) {
+    printf("Test efault\n");
+    return -EFAULT;
+  }
+
+  printf("mknodat(dirfd=%d, path=\"%s\", mode=%o, dev=%lx)\n", DirFd, Path,
+         Mode, Dev);
+
+  return -ENOSYS;
 }
 
 // 134
@@ -839,7 +860,7 @@ long LunixSyscall(LunixProcess *Process) {
   LunixDebug("[lunix] Reg0: %lu\n", Reg0);
   LunixDebug("[lunix] Reg1: %lu\n", Reg1);
   LunixDebug("[lunix] Reg2: %lu\n", Reg2);
-  LunixDebug("[lunix] Reg3: %lu\n", r3);
+  LunixDebug("[lunix] Reg3: %lu\n", Reg3);
 
   switch (SyscallNumber) {
   case 17:
@@ -861,7 +882,7 @@ long LunixSyscall(LunixProcess *Process) {
     return LunixSyscallGetdents64(Unicorn, Reg0, Reg1, Reg2);
 
   case 62:
-    return LunixSyscallRead(Unicorn, Reg0, Reg1, Reg2);
+    return LunixSyscallLseek(Unicorn, Reg0, Reg1, Reg2);
 
   case 63:
     return LunixSyscallRead(Unicorn, Reg0, Reg1, Reg2);
@@ -895,6 +916,9 @@ long LunixSyscall(LunixProcess *Process) {
 
   case 113:
     return LunixSyscallClock_Gettime(Unicorn, Reg0, Reg1);
+
+  case 133:
+    return LunixSyscallMknodat(Unicorn, Process, Reg0, Reg1, Reg2, Reg3);
 
   case 134:
     return LunixSyscallRt_sigaction(Unicorn, Reg0, Reg1, Reg2, Reg3);

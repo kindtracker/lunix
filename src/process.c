@@ -122,7 +122,7 @@ LunixProcess *LunixCreateProcess(const char *ProgramPath, int Argc,
     return NULL;
   }
 
-  LunixDebug("[Lunix] ProgramPath: %s\n", path);
+  LunixDebug("[Lunix] ProgramPath: %s\n", ProgramPath);
   if (LunixLoadProgram(ProgramPath, Process->UnicornVM, &Entry) != 0) {
     fprintf(stderr, "[Lunix] failed to load program\n");
     return NULL;
@@ -184,18 +184,7 @@ LunixProcess *LunixCreateBlankProcess(uint64_t StackTop, uint64_t StackSize) {
 }
 
 int LunixRemoveProcess(LunixProcess *Process) {
-  for (int i = 0; i < LunixProcessCount; i++) {
-    if (LunixProcesses[i] == Process) {
-      uc_close(Process->UnicornVM);
-      free(Process);
-
-      memmove(&LunixProcesses[i], &LunixProcesses[i + 1],
-              (LunixProcessCount - i - 1) * sizeof(LunixProcesses[0]));
-
-      LunixProcessCount--;
-      LunixProcesses[LunixProcessCount] = NULL;
-    }
-  }
+  Process->State = LUNIX_PSTATE_EXITED;
 
   for (int i = 0; i < LunixProcessCount; i++) {
     LunixProcess *WProcess = LunixProcesses[i];

@@ -20,7 +20,11 @@
 #define LunixDebug(...) ((void)0)
 #endif
 
-typedef enum { LUNIX_PSTATE_READY, LUNIX_PSTATE_WAITING } LunixProcessState;
+typedef enum {
+  LUNIX_PSTATE_READY,
+  LUNIX_PSTATE_EXITED,
+  LUNIX_PSTATE_WAITING
+} LunixProcessState;
 
 typedef struct {
   uc_engine *UnicornVM;

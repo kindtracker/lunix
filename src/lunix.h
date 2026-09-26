@@ -20,9 +20,17 @@
 #define LunixDebug(...) ((void)0)
 #endif
 
+typedef enum { LUNIX_PSTATE_READY, LUNIX_PSTATE_WAITING } LunixProcessState;
+
 typedef struct {
   uc_engine *UnicornVM;
-  int ProccessId;
+  uint32_t ProccessId;
+  uint64_t StackTop;
+  uint64_t StackSize;
+
+  LunixProcessState State;
+
+  int WaitingForPid;
 } LunixProcess;
 
 extern int LunixActiveProcessCount;
@@ -36,5 +44,6 @@ long LunixSyscall(LunixProcess *Process);
 
 LunixProcess *LunixCreateProcess(const char *ProgramPath, int Argc,
                                  const char **Argv);
+LunixProcess *LunixCreateBlankProcess(uint64_t StackTop, uint64_t StackSize);
 int LunixRemoveProcess(LunixProcess *Process);
 int LunixScheduler();

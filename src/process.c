@@ -6,13 +6,17 @@ LunixProcess *LunixProcesses[64];
 int LunixActiveProcessCount = 0;
 int LunixProcessCount = 0;
 
-int SetupStack(uc_engine *Unicorn, int StackTop, int StackSize, int Argc,
-               const char **Argv) {
+int SetupStack(uc_engine *Unicorn, uint64_t StackTop, uint64_t StackSize,
+               int Argc, const char **Argv) {
   uc_err Error = uc_mem_map(Unicorn, StackTop - StackSize, StackSize,
                             UC_PROT_READ | UC_PROT_WRITE);
   if (Error != UC_ERR_OK) {
     fprintf(stderr, "[Lunix] failed to map stack: %s\n", uc_strerror(Error));
     return -1;
+  }
+
+  if (Argc < 0) {
+    return 0;
   }
 
   uint64_t StackPointer = StackTop - 16;
@@ -142,6 +146,37 @@ LunixProcess *LunixCreateProcess(const char *ProgramPath, int Argc,
   uc_hook_add(Process->UnicornVM, &Hook, UC_HOOK_CODE, (void *)HookCode,
               Process, 1, 0);
 
+  Process->StackTop = 0x80000000;
+  Process->StackSize = 0x10000;
+
+  LunixProcesses[LunixProcessCount] = Process;
+  LunixProcessCount++;
+
+  return Process;
+}
+
+LunixProcess *LunixCreateBlankProcess(uint64_t StackTop, uint64_t StackSize) {
+  LunixProcess *Process = malloc(sizeof(LunixProcess));
+  memset(Process, 0, sizeof(LunixProcess));
+
+  uc_err Error = uc_open(UC_ARCH_ARM64, UC_MODE_ARM, &Process->UnicornVM);
+  if (Error != UC_ERR_OK) {
+    fprintf(stderr, "[Lunix] failed to load unicorn: %s\n", uc_strerror(Error));
+    return NULL;
+  }
+
+  if (SetupStack(Process->UnicornVM, StackTop, StackSize, -1, NULL) != 0) {
+    fprintf(stderr, "[Lunix] failed to initalize stack\n");
+    return NULL;
+  }
+
+  uc_hook Hook;
+  uc_hook_add(Process->UnicornVM, &Hook, UC_HOOK_CODE, (void *)HookCode,
+              Process, 1, 0);
+
+  Process->StackTop = StackTop;
+  Process->StackSize = StackSize;
+
   LunixProcesses[LunixProcessCount] = Process;
   LunixProcessCount++;
 
@@ -151,15 +186,25 @@ LunixProcess *LunixCreateProcess(const char *ProgramPath, int Argc,
 int LunixRemoveProcess(LunixProcess *Process) {
   for (int i = 0; i < LunixProcessCount; i++) {
     if (LunixProcesses[i] == Process) {
+      uc_close(Process->UnicornVM);
+      free(Process);
+
       memmove(&LunixProcesses[i], &LunixProcesses[i + 1],
               (LunixProcessCount - i - 1) * sizeof(LunixProcesses[0]));
 
       LunixProcessCount--;
       LunixProcesses[LunixProcessCount] = NULL;
-
-      return 0;
     }
   }
 
-  return -1;
+  for (int i = 0; i < LunixProcessCount; i++) {
+    LunixProcess *WProcess = LunixProcesses[i];
+
+    if (WProcess->State == LUNIX_PSTATE_WAITING &&
+        WProcess->WaitingForPid == Process->ProccessId) {
+      WProcess->State = LUNIX_PSTATE_READY;
+    }
+  }
+
+  return 1;
 }

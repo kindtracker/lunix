@@ -637,13 +637,55 @@ static long LunixSyscallBrk(uc_engine *Unicorn, uint64_t addr) {
 }
 
 // 220
-static long LunixSyscallClone(uc_engine *Unicorn, uint64_t Flags,
-                              uint64_t Stack, uint64_t ParentTid,
-                              uint64_t ChildTid, uint64_t Tls,
-                              LunixProcess *Process) {
-  Flags = Flags;
+static long LunixSyscallClone(uc_engine *Unicorn, LunixProcess *Process,
+                              uint64_t Flags, uint64_t StackTop,
+                              uint64_t ParentTid, uint64_t ChildTid,
+                              uint64_t Tls) {
+  StackTop = StackTop & ~0xFFFULL;
 
-  LunixProcess *NewProcess = LunixCreateProcess(NULL, 0, NULL);
+  printf("0x%x 0x%x 0x%x 0x%x\n", Flags, StackTop, ParentTid, ChildTid, Tls);
+  LunixProcess *NewProcess =
+      LunixCreateBlankProcess(StackTop, Process->StackSize);
+
+  if (NewProcess == NULL) {
+    return -1;
+  }
+  return 1;
+}
+
+// 221
+static long LunixSyscallExecve(uc_engine *Unicorn, LunixProcess *Process,
+                               uint64_t GProgramPath, uint64_t GArgv,
+                               uint64_t GEnvp) {
+  char Argv[64][4096];
+  char *ArgvPointers[64];
+
+  uint64_t ArgvPointer;
+  uint64_t Index = 0;
+
+  while (Index < 63) {
+    if (uc_mem_read(Unicorn, GArgv + Index * sizeof(uint64_t), &ArgvPointer,
+                    sizeof(ArgvPointer)) != UC_ERR_OK)
+      return -1;
+
+    if (ArgvPointer == 0)
+      break;
+
+    if (LunixReadString(Unicorn, ArgvPointer, Argv[Index],
+                        sizeof(Argv[Index])) < 0)
+      return -1;
+
+    ArgvPointers[Index] = Argv[Index];
+    Index++;
+  }
+  ArgvPointers[Index] = NULL;
+
+  char ProgramPath[4096];
+  LunixReadString(Unicorn, GProgramPath, ProgramPath, sizeof(ProgramPath));
+
+  //  TODO: replace process instead of creating new one
+  LunixCreateProcess(ProgramPath, Index, (const char **)ArgvPointers);
+  LunixRemoveProcess(Process);
 }
 
 // 222
@@ -720,6 +762,15 @@ static long LunixSyscallMadvise(uc_engine *Unicorn, uint64_t Address,
   Address = Address;
   Length = Length;
   advice = advice;
+  return 0;
+}
+
+// 240
+static long LunixSyscallWait4(uc_engine *Unicorn, LunixProcess *Process,
+                              int32_t ProcessId, uint64_t Wstatus,
+                              int32_t Options, uint64_t Rusage) {
+  Process->State = LUNIX_PSTATE_WAITING;
+  Process->WaitingForPid = ProcessId;
   return 0;
 }
 
@@ -891,8 +942,11 @@ long LunixSyscall(LunixProcess *Process) {
     uint64_t Reg4;
     uc_reg_read(Unicorn, UC_ARM64_REG_X4, &Reg4);
     LunixDebug("[Lunix] Reg4: %lu\n", Reg4);
-    return LunixSyscallClone(Unicorn, Reg0, Reg1, Reg2, Reg3, Reg4, Process);
+    return LunixSyscallClone(Unicorn, Process, Reg0, Reg1, Reg2, Reg3, Reg4);
   }
+
+  case 221:
+    return LunixSyscallExecve(Unicorn, Process, Reg0, Reg1, Reg2);
 
   case 222: {
     uint64_t Reg4;
@@ -912,6 +966,9 @@ long LunixSyscall(LunixProcess *Process) {
 
   case 233:
     return LunixSyscallMadvise(Unicorn, Reg0, Reg1, Reg2);
+
+  case 260:
+    return LunixSyscallWait4(Unicorn, Process, Reg0, Reg1, Reg2, Reg3);
 
   case 278:
     return LunixSyscallGetrandom(Unicorn, Reg0, Reg1, Reg2);

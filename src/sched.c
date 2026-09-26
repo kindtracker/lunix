@@ -10,6 +10,9 @@ int LunixScheduler() {
 
   for (int i = 0; i < LunixProcessCount; i++) {
     LunixProcess *Process = LunixProcesses[i];
+    if (Process->State == LUNIX_PSTATE_WAITING) {
+      continue;
+    }
 
     uc_engine *UnicornVM = Process->UnicornVM;
     uint64_t ProgramCount;

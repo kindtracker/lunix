@@ -40,11 +40,13 @@ int LunixScheduler() {
     }
     Process->LastWasSyscall = false;
 
-    printf("[DEBUG] Process %d: State=%d, PC=0x%lx\n", i, Process->State,
-           ProgramCount);
-
     if (Process->State == LUNIX_PSTATE_READY) {
-      uc_emu_start(UnicornVM, ProgramCount, 0, 0, 10000);
+      printf("[DEBUG] Before emu_start - Process %d: PC=0x%lx, State=%d\n", i,
+             ProgramCount, Process->State);
+      uc_err err = uc_emu_start(UnicornVM, ProgramCount, 0, 0, 10000);
+      printf("[DEBUG] After emu_start - err=%d, LastWasSyscall=%d\n", err,
+             Process->LastWasSyscall);
+      printf("Error string: %s\n", uc_strerror(err));
     }
 
     usleep(10 * 1000);

@@ -40,6 +40,7 @@ typedef struct {
 
 extern int LunixActiveProcessCount;
 extern int LunixProcessCount;
+extern int LunixCurrentProcessId;
 extern LunixProcess *LunixProcesses[64];
 extern bool LunixAlive;
 

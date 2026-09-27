@@ -4,6 +4,7 @@
 
 LunixProcess *LunixProcesses[64];
 int LunixActiveProcessCount = 0;
+int LunixCurrentProcessId = 1;
 int LunixProcessCount = 0;
 
 int SetupStack(uc_engine *Unicorn, uint64_t StackTop, uint64_t StackSize,
@@ -148,6 +149,7 @@ LunixProcess *LunixCreateProcess(const char *ProgramPath, int Argc,
 
   Process->StackTop = 0x80000000;
   Process->StackSize = 0x10000;
+  Process->ProccessId = LunixActiveProcessCount++;
 
   LunixProcesses[LunixProcessCount] = Process;
   LunixProcessCount++;
@@ -176,6 +178,7 @@ LunixProcess *LunixCreateBlankProcess(uint64_t StackTop, uint64_t StackSize) {
 
   Process->StackTop = StackTop;
   Process->StackSize = StackSize;
+  Process->ProccessId = LunixCurrentProcessId;
 
   LunixProcesses[LunixProcessCount] = Process;
   LunixProcessCount++;

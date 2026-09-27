@@ -658,20 +658,77 @@ static long LunixSyscallBrk(uc_engine *Unicorn, uint64_t addr) {
 }
 
 // 220
+
 static long LunixSyscallClone(uc_engine *Unicorn, LunixProcess *Process,
                               uint64_t Flags, uint64_t StackTop,
                               uint64_t ParentTid, uint64_t ChildTid,
                               uint64_t Tls) {
   StackTop = StackTop & ~0xFFFULL;
 
-  printf("0x%x 0x%x 0x%x 0x%x\n", Flags, StackTop, ParentTid, ChildTid, Tls);
   LunixProcess *NewProcess =
       LunixCreateBlankProcess(StackTop, Process->StackSize);
-
   if (NewProcess == NULL) {
     return -1;
   }
-  return 1;
+
+  uc_mem_region *Regions;
+  uint32_t RegionCount;
+
+  uc_err Error = uc_mem_regions(Process->UnicornVM, &Regions, &RegionCount);
+  if (Error != UC_ERR_OK) {
+    return -1;
+  }
+
+  // Copy ALL regions (code, data, heap) to child
+  for (uint32_t i = 0; i < RegionCount; i++) {
+    uint64_t Address = Regions[i].begin;
+    uint64_t Size = Regions[i].end - Regions[i].begin;
+
+    // Skip only the old stack (child has new one)
+    if (Address >= Process->StackTop - Process->StackSize &&
+        Address < Process->StackTop) {
+      continue;
+    }
+
+    Address = Address & ~0xFFFULL;
+    Size = (Size + 0xFFF) & ~0xFFFULL;
+
+    if (uc_mem_map(NewProcess->UnicornVM, Address, Size, Regions[i].perms) ==
+        UC_ERR_OK) {
+      uint8_t *Buffer = malloc(Size);
+      uc_mem_read(Process->UnicornVM, Address, Buffer, Size);
+      uc_mem_write(NewProcess->UnicornVM, Address, Buffer, Size);
+      free(Buffer);
+    }
+  }
+
+  free(Regions);
+
+  // Copy ALL registers (including X0-X30, PC, but NOT SP)
+  uint64_t RegVal;
+  for (int reg = UC_ARM64_REG_X0; reg <= UC_ARM64_REG_X30; reg++) {
+    if (reg == UC_ARM64_REG_SP)
+      continue;
+    uc_reg_read(Unicorn, reg, &RegVal);
+    uc_reg_write(NewProcess->UnicornVM, reg, &RegVal);
+  }
+
+  uint64_t PC;
+  uc_reg_read(Unicorn, UC_ARM64_REG_PC, &PC);
+  uc_reg_write(NewProcess->UnicornVM, UC_ARM64_REG_PC, &PC);
+
+  // Child gets 0, parent gets child PID
+  uint64_t ChildRet = 0;
+  uc_reg_write(NewProcess->UnicornVM, UC_ARM64_REG_X0, &ChildRet);
+
+  NewProcess->State = LUNIX_PSTATE_READY;
+
+  uint64_t ChildPC, ChildX8;
+  uc_reg_read(NewProcess->UnicornVM, UC_ARM64_REG_PC, &ChildPC);
+  uc_reg_read(NewProcess->UnicornVM, UC_ARM64_REG_X8, &ChildX8);
+  printf("[DEBUG] Child initialized: PC=0x%lx, X8=%lu\n", ChildPC, ChildX8);
+
+  return NewProcess->ProccessId;
 }
 
 // 221

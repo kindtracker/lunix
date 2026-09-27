@@ -103,8 +103,8 @@ static void HookCode(uc_engine *Unicorn, uint64_t Address, uint32_t Size,
     uint64_t Result = LunixSyscall(Process);
     uc_reg_write(Unicorn, UC_ARM64_REG_X0, &Result);
 
-    uint64_t ProgramCount = Address + 4;
-    uc_reg_write(Unicorn, UC_ARM64_REG_PC, &ProgramCount);
+    Process->LastWasSyscall = true;
+    uc_emu_stop(Unicorn);
   }
 }
 

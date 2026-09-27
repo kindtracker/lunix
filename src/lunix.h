@@ -6,7 +6,7 @@
 #define LUNIX_MMAP_BASE 0x100000000ULL
 
 #define LUNIX_ENABLE_LOG
-// #define LUNIX_ENABLE_DEBUG
+#define LUNIX_ENABLE_DEBUG
 
 #ifdef LUNIX_ENABLE_LOG
 #define LunixLog printf
@@ -32,6 +32,7 @@ typedef struct {
   uint64_t StackTop;
   uint64_t StackSize;
 
+  bool LastWasSyscall;
   LunixProcessState State;
 
   int WaitingForPid;
